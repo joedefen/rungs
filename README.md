@@ -1,2 +1,2 @@
 # rung
-tool to step through fuzzy procedures on linux
+tool to step through fuzzy procedures on linux (coming soon)
