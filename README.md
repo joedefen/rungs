@@ -7,7 +7,7 @@
 
 ##  A Practical Example -- Manually Updating EndeavourOS
 
-![eos-update-menu](https://github.com/[joedfen]/rung/blob/main/images/image.jpg?raw=true)
+![eos-update-menu](https://github.com/joedefen/rung/blob/main/images/eos-update-menu.png?raw=true)
 
 Notes:
 * Except for the first personal command, all commands are standard
