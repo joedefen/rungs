@@ -11,7 +11,10 @@ import os
 import traceback
 import re
 from configparser import ConfigParser
-from InlineMenu import Menu
+try:
+    from InlineMenu import Menu
+except:
+    from rung.InlineMenu import Menu
 
 class Rung:
     """ Fuzzy script tool workhorse class. """

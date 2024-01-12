@@ -3,23 +3,38 @@
 * skip certain steps if certain vague criteria are met
 * repeat certain steps if they failed and trying again makes sense
 
-You very simply specify your procedures a single `.ini` file.
+You very simply specify your procedures within a single `.ini` file.
+
+> **Quick Start**: from the CLI
+> * **If `python3 -V` shows v3.11 or later, install using `pipx`**:
+>   * `python3 -m pip install --user pipx # if pipx not installed`
+>   * `python3 -m pipx ensurepath # if needed (restart terminal)`
+>   * `pipx upgrade rung || pipx install rung # to install/upgrade`
+> * **Else for python3.10 and lesser versions, install using `pip`**:
+>   * `python3 -m pip install --user --upgrade rung`
+> * **To run**:
+>   * `rung # to run and show all menus`
+>   * `rung {menu-name} # run the specified menu`
+>   * `rung --edit # edit your menus`
+
+**Mnemonic**: step through the **rung**s of your laddered procedure ;-)
 
 ##  A Practical Example -- Manually Updating EndeavourOS
+Here is an example menu for manually update an EndeavourOS:
 
 ![eos-update-menu](https://github.com/joedefen/rung/blob/main/images/eos-update-menu.png?raw=true)
 
 Notes:
-* Except for the first personal command, all commands are standard
+* Except for the first personal command, all commands are standard on EndeavourOS.
 * All commands are run literally by `bash` except:
   * `exit` which means exit the menu.
   * `rung {menu-name}` runs rung recursively using `python3`
 * To run a command:
-  * highlight the command by typing the character before the ':' or move the cursor by using the up and down arrow keys.
-  * then press enter.
-* After the command runs, the following command is highlighted.
-* Repeat and skip commands by manipulating the cursor.
-* **If the menu does not fit in your terminal, the resize until it fits.**
+  * highlight the command by typing the character before the ':' or move the cursor with the up/down arrow keys.
+  * then press ENTER.
+* After the command runs, the next command is highlighted and runs with just ENTER if desired.
+* To, repeat and skip commands, just select another command rather than the next.
+* **IMPORTANT: If the menu does not fit within your terminal, then resize until it does fit.**
 
 ## Config: `~/.config/rung/rung.ini`
 Edit `~/.config/rung/rung.ini` to configure your menu. The "eos-update-menu" was configured by adding this section:
