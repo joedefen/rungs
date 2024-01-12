@@ -3,7 +3,7 @@
 * skip certain steps if certain vague criteria are met
 * repeat certain steps if they failed and trying again makes sense
 
-`rung` uses an `.ini` file to specify those procedures.
+You very simply specify your procedures a single `.ini` file.
 
 ##  A Practical Example -- Manually Updating EndeavourOS
 
@@ -25,12 +25,12 @@ Notes:
 Edit `~/.config/rung/rung.ini` to configure your menu. The "eos-update-menu" was configured by adding this section:
 ```
 [eos-update]
-a: my-snaps                   # replace snaps of root, home, etc
-b: reflector-simple           # update Arch mirrors
-c: eos-rankmirrors            # update EndeavourOS mirrors
-d: eos-update --yay           # endeavor OS update
-e: sudo paccache -rk1; sudo paccache -ruk0
-f: sudo pacman -Rns $(pacman -Qdtq) # remove orphans
+a: my-snaps               # replace snaps of root, home, etc 
+b: reflector-simple       # update Arch mirrors
+c: eos-rankmirrors        # update EndeavourOS mirrors
+d: eos-update --yay       # EndeavourOS update script
+e: sudo paccache -rk1; sudo paccache -ruk0 # cleanup cache
+f: sudo pacman -Rns $(pacman -Qdtq)        # cleanup orphans
 g: flatpak update
 h: flatpak uninstall --unused; flatpak repair
 i: sudo journalctl --vacuum-time=2weeks
@@ -56,7 +56,13 @@ options:
   -n, --dry-run  do NOT do anything
 ```
 Thus, you can:
-* provide the names of the menus to run them.
 * run `rung -e` to edit the configuration file.
 * run `rung` with no arguments to given a menu of all the defined menus.
+* provide the name specifiers of the menus to run them; each name spec can match:
+  * exactly,
+  * case independent exactly (if unique),
+  * or case independent substring match but only at word boundaries (if unique); e.g., for the menus, `['edit-rung-config', 'example', 'eos-update']`:
+    * these name specs would find a menu:  'edit', 'ex', 'EOS-', 'EOS-UPDATE'
+    * these name specs would NOT: 'date', 'e'.
+
 
