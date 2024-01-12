@@ -71,7 +71,7 @@ class Menu:
         self.input = ''
         self.default_bottom = 'Use Up/Down/key to highlight and Enter to select'
         self.prev_bottom = self.default_bottom
-        self._refresh(clear=False)
+        self._refresh(clear=True)
         if default in self.prompts:
             idx = list(self.prompts.keys()).index(default)
             self._move(idx - self.selected)

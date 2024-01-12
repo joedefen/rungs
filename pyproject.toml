@@ -14,17 +14,17 @@
 #   rm -r dist; python3 -m build; ls dist/.
 #   python3 -m twine upload dist/*
 #     ## Enter __token__ and the saved TOKEN (in bitwarden)
-#   pipx upgrade rung || pipx install rung # >= python3.11
-#   --OR-- sudo python3 -m pip install rung # <= python3.10
-#   ## VISIT  https://pypi.org/project/rung and delete old versions
+#   pipx upgrade rungs || pipx install rungs # >= python3.11
+#   --OR-- sudo python3 -m pip install rungs # <= python3.10
+#   ## VISIT  https://pypi.org/project/rungs and delete old versions
 #
 # TEST Build and test (from project directory):
 #   ## BUMP the version (below in [project])
 #   rm -r dist; python3 -m build
 #   python3 -m twine upload --repository testpypi dist/*
 #     ## Enter __token__ and the saved TOKEN (in bitwarden)
-#   sudo python3 -m pip install --index-url https://test.pypi.org/simple/ --no-deps rung
-#   ## VISIT  https://test.pypi.org/project/rung and delete old versions
+#   sudo python3 -m pip install --index-url https://test.pypi.org/simple/ --no-deps rungs
+#   ## VISIT  https://test.pypi.org/project/rungs and delete old versions
 
 [build-system]
 requires = ["hatchling"]
@@ -52,16 +52,16 @@ dependencies = [
 ]
 
 [project.scripts]
-rung = "rung.rung:run"
+rungs = "rungs.rungs:run"
 
 [tool.hatch.build.targets.wheel]
-packages = ["rung"]
+packages = ["rungs"]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
-    "/rung/__pycache__",
+    "/rungs/__pycache__",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/joedefen/rung"
-"Bug Tracker" = "https://github.com/joedefen/rung/issues"
+"Homepage" = "https://github.com/joedefen/rungs"
+"Bug Tracker" = "https://github.com/joedefen/rungs/issues"

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-"rung" is a tool to step thru fuzz scripts.
-- its config file is at "~/.config/rung/rung.yaml
-- the last syntactically correct  "~/.config/rung/rung.yaml"
+"rungs" is a tool to step thru fuzz scripts.
+- its config file is at "~/.config/rungs/rungs.yaml
+- the last syntactically correct  "~/.config/rungs/rungs.yaml"
 """
 # pylint: disable=import-outside-toplevel,invalid-name
 # pylint: disable=too-many-branches,broad-exception-caught
@@ -14,16 +14,16 @@ from configparser import ConfigParser
 try:
     from InlineMenu import Menu
 except:
-    from rung.InlineMenu import Menu
+    from rungs.InlineMenu import Menu
 
-class Rung:
+class Rungs:
     """ Fuzzy script tool workhorse class. """
     def __init__(self):
         self.rung_cmd = os.path.abspath(__file__)
         self.opts = None
         self.prompts = None
-        self.config_dir = os.path.expanduser("~/.config/rung")
-        self.config_file = self.config_dir + '/rung.ini'
+        self.config_dir = os.path.expanduser("~/.config/rungs")
+        self.config_file = self.config_dir + '/rungs.ini'
         self.config = None
         self.menus = {}
         self.get_config()
@@ -37,7 +37,7 @@ class Rung:
             os.makedirs(self.config_dir, 0o755, True)
         if not os.path.isfile(self.config_file):
             with open(self.config_file, "w", encoding="utf-8") as f:
-                f.write('[edit-rung-config]\n')
+                f.write('[edit-rungs-config]\n')
                 f.write('a: ${EDITOR=-vi} ' + f'"{self.config_file}"\n')
                 f.write('x: exit\n\n')
                 f.write('[example]\n')
@@ -102,13 +102,14 @@ class Rung:
         for section in self.menus:
             key, keys = keys[:1], keys[1:]
             if key:
-                options[key] = f'rung {section}'
+                options[key] = f'rungs {section}'
 
         options['x'] = 'exit'
         return options
 
-    def do_menu(self, menu_name, options):
+    def do_menu(self, menu_name, options=None):
         """ TBD """
+        options = options if options else self.menus.get(menu_name)
         keys, prompts, cmds = self.build_prompts(options)
 
         todo = keys[0]
@@ -118,7 +119,7 @@ class Rung:
             cmd = cmds[choice]
             if cmd in ('exit', 'quit'):
                 return
-            if cmd.startswith('rung '):
+            if cmd.startswith('rungs '):
                 cmd = f'python3 "{self.rung_cmd}" {cmd[5:]}'
             self.run_cmd(cmd)
 
@@ -141,7 +142,8 @@ class Rung:
             return False
 
             ##### Look for exact match
-        founds, found = [], self.menus.get(wanted, None)
+        founds = []
+        found = wanted if wanted in self.menus else None
             ##### look for case independent match
         if not found:
             for name in self.menus:
@@ -154,30 +156,33 @@ class Rung:
                     founds.append(name)
         if not found and founds:
             found = founds[0] if len(founds) == 1 else found
-        return found, self.menus.get(found) if found else None
+
+        if not found and len(founds) > 1:
+            print(f'ERROR: multiple {wanted!r} in {list(self.menus)}')
+        elif not found and len(founds) < 1:
+            print(f'ERROR: no {wanted!r} in {list(self.menus)}')
+        return found
 
     def main(self):
         """TDB"""
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument('-e', '--edit', action="store_true",
-                help='edit config (i.e., runs edit-rung-config)')
+                help='edit config (i.e., runs edit-rungs-config)')
         parser.add_argument('-n', '--dry-run', action="store_true",
                 help='do NOT do anything')
         parser.add_argument('menus', nargs='*',
                 help='zero or more arguments')
         self.opts = parser.parse_args()
         if self.opts.edit:
-            self.opts.menus = ['edit-rung-config'] + self.opts.menus
-        os.system('reset')
+            self.opts.menus = ['edit-rungs-config'] + self.opts.menus
+        # os.system('reset')
         # self.dump()
         if self.opts.menus:
             for menu_name in self.opts.menus:
-                found, options = self.find_menu(menu_name)
+                found = self.find_menu(menu_name)
                 if found:
-                    self.do_menu(found, options)
-                else:
-                    print(f'ERROR: no {menu_name!r} in {list(self.menus)}')
+                    self.do_menu(found)
         else:
             self.opts.menus = ['ALL-MENUS']
             self.do_menu ('ALL-MENUS', self.make_section_menu())
@@ -185,7 +190,7 @@ class Rung:
 def run():
     """Wrap main in try/except."""
     try:
-        Rung().main()
+        Rungs().main()
     except KeyboardInterrupt:
         pass
     except Exception as exce:

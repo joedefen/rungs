@@ -1,4 +1,4 @@
-rung.bundle
+rungs.bundle
 dist/*
 __pycache__/*
 */__pycache__/*

@@ -1,4 +1,4 @@
-from .rung import run
+from .rungs import run
 
 if __name__ == "__main__":
     run()
