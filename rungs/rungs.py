@@ -50,7 +50,7 @@ class Rungs:
                 f.write('b: prompt-b\n')
                 f.write('   command-b\n')
                 f.write('x: exit\n')
-        self.config = ConfigParser()
+        self.config = ConfigParser(interpolation=None)
         self.read_file()
         for section, options in self.config.items():
             if section != 'DEFAULT':
