@@ -58,7 +58,7 @@ So, the config looks nearly the same as the menu, but if you specify a multiline
 
 In this manner, for very complicated commands, you can provide a summary description of what is to be run.
 
-# `rungs` Command Line
+## `rungs` Command Line
 ```
 usage: rungs [-h] [-e] [-n] [menus ...]
 
@@ -68,10 +68,10 @@ positional arguments:
 options:
   -h, --help     show this help message and exit
   -e, --edit     edit config (i.e., runs edit-rungs-config)
-  -n, --dry-run  do NOT do anything
+  -n, --dry-run  show commands w/o running them
 ```
 Thus, you can:
-* run `rungs -e` to edit the configuration file.
+* run `rungs --edit` to edit the configuration file.
 * run `rungs` with no arguments to given a menu of all the defined menus.
 * provide the name specifiers of the menus to run them; each name spec can match:
   * exactly,
@@ -79,5 +79,24 @@ Thus, you can:
   * or case independent substring match but only at word boundaries (if unique); e.g., for the menus, `['edit-rungs-config', 'example', 'eos-update']`:
     * these name specs would find a menu:  'edit', 'ex', 'EOS-', 'EOS-UPDATE'
     * these name specs would NOT: 'date', 'e'.
+    
+## The Edit Menu and Handling Corrupt .ini Files
+On first startup, the .ini file contains a menu for editing that you may customize:
+```
+[edit-rungs-config]
+a: ${EDITOR=-vi} ~/.config/rungs/rungs.ini
+x: exit
+
+[example]
+a: command-a
+b: prompt-b
+   command-b
+x: exit
+```
+For example, you might change the default from `vi` to `geany` if installed and desired. Also, note:
+* You may remove the `example` which shows a multilined value which must be indented lines after the first.
+* Do **NOT** remove the `edit-rungs-config` menu; it is needed for `--edit` option AND recovery.
+* In case of a corrupt `.ini`, you will see the error and the `edit-rungs-config` menu.
+* Each time the `.ini` file is read and valid, `~/.config/rungs/rungs.ini.bak` is written; in the case you just made a terrible change, recover using the `.ini.bak` file manually (w/o running `rungs -e`).
 
 

@@ -10,6 +10,7 @@
 import os
 import traceback
 import re
+import shutil
 from configparser import ConfigParser
 try:
     from InlineMenu import Menu
@@ -18,14 +19,18 @@ except Exception:
 
 class Rungs:
     """ Fuzzy script tool workhorse class. """
+    edit_menu = 'edit-rungs-config'
     def __init__(self):
         self.rung_cmd = os.path.abspath(__file__)
         self.opts = None
         self.prompts = None
+        self.config_abstract = "~/.config/rungs/rungs.ini"
         self.config_dir = os.path.expanduser("~/.config/rungs")
         self.config_file = self.config_dir + '/rungs.ini'
+        self.config_backup = self.config_file + '.bak'
         self.config = None
         self.menus = {}
+        self.corrupt_config = False
         self.get_config()
 
     def get_config(self):
@@ -37,8 +42,8 @@ class Rungs:
             os.makedirs(self.config_dir, 0o755, True)
         if not os.path.isfile(self.config_file):
             with open(self.config_file, "w", encoding="utf-8") as f:
-                f.write('[edit-rungs-config]\n')
-                f.write('a: ${EDITOR=-vi} ' + f'"{self.config_file}"\n')
+                f.write(f'[{self.edit_menu}]\n')
+                f.write('a: ${EDITOR=-vi} ' + f'{self.config_abstract}\n')
                 f.write('x: exit\n\n')
                 f.write('[example]\n')
                 f.write('a: command-a\n')
@@ -46,10 +51,27 @@ class Rungs:
                 f.write('   command-b\n')
                 f.write('x: exit\n')
         self.config = ConfigParser()
-        self.config.read(filenames=[self.config_file], encoding='utf-8')
+        self.read_file()
         for section, options in self.config.items():
             if section != 'DEFAULT':
                 self.menus[section] = options
+                
+    def read_file(self):
+        """ Read the config file ... if not working, try the backup file"""
+        try:
+            self.config.read(filenames=[self.config_file], encoding='utf-8')
+
+        except Exception as exc:
+            print(f'ERROR: Cannot read {self.config_file!r}:', str(exc))
+            print(f'   ... Trying backup file: {self.config_backup!r} ...')
+            self.config.read(filenames=[self.config_backup], encoding='utf-8')
+            self.corrupt_config = True
+            return
+            
+        # after every successful read of the original, copy it to the backup as
+        # last known good copy
+        shutil.copy(self.config_file, self.config_backup)
+
 
     def dump(self):
         """ Dump the menus found."""
@@ -64,7 +86,7 @@ class Rungs:
            - clear the screen first
            - if dry run, clear the screen first
          """
-        echo = 'echo WOULD +' if self.opts.dry_run else 'set -x; '
+        echo = 'echo -e WOULD RUN:' if self.opts.dry_run else 'set -x; '
         # os.system('clear')
         if self.opts.dry_run:
             cmd = f'{cmd!r}'
@@ -170,19 +192,21 @@ class Rungs:
         parser.add_argument('-e', '--edit', action="store_true",
                 help='edit config (i.e., runs edit-rungs-config)')
         parser.add_argument('-n', '--dry-run', action="store_true",
-                help='do NOT do anything')
+                help='show commands w/o running them')
         parser.add_argument('menus', nargs='*',
                 help='zero or more arguments')
         self.opts = parser.parse_args()
-        if self.opts.edit:
-            self.opts.menus = ['edit-rungs-config'] + self.opts.menus
+        if self.opts.edit or self.corrupt_config:
+            self.opts.menus = [self.edit_menu]
+        if self.corrupt_config:
+            print(f'NOTE: substituting {self.edit_menu!r} ...')
         # os.system('reset')
         # self.dump()
         if self.opts.menus:
             for menu_name in self.opts.menus:
                 found = self.find_menu(menu_name)
                 if found:
-                    os.system('reset')
+                    # os.system('reset')
                     self.do_menu(found)
         else:
             self.opts.menus = ['ALL-MENUS']
