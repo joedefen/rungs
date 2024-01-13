@@ -96,6 +96,7 @@ x: exit
 For example, you might change the default from `vi` to `geany` if installed and desired. Also, note:
 * You may remove the `example` which shows a multilined value which must be indented lines after the first.
 * Do **NOT** remove the `edit-rungs-config` menu; it is needed for `--edit` option AND recovery.
+* The `edit-rungs-config` shows how to pass variables to your commands.
 * In case of a corrupt `.ini`, you will see the error and the `edit-rungs-config` menu.
 * Each time the `.ini` file is read and valid, `~/.config/rungs/rungs.ini.bak` is written; in the case you just made a terrible change, recover using the `.ini.bak` file manually (w/o running `rungs -e`).
 
