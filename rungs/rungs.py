@@ -13,7 +13,7 @@ import re
 from configparser import ConfigParser
 try:
     from InlineMenu import Menu
-except:
+except Exception:
     from rungs.InlineMenu import Menu
 
 class Rungs:
@@ -65,17 +65,17 @@ class Rungs:
            - if dry run, clear the screen first
          """
         echo = 'echo WOULD +' if self.opts.dry_run else 'set -x; '
-        os.system('clear')
+        # os.system('clear')
         if self.opts.dry_run:
             cmd = f'{cmd!r}'
             precmd = f'{precmd!r}' if precmd else None
         if precmd:
-            print(f'1 ---- {echo} {precmd!r}')
+            # print(f'1 ---- {echo} {precmd!r}')
             os.system(f'{echo} {precmd}')
-            print(f'2 ---- {echo} {cmd!r}')
+            # print(f'2 ---- {echo} {cmd!r}')
             os.system(f'{echo} {cmd}')
         else:
-            print(f'3 ---- {echo} {cmd!r}')
+            # print(f'3 ---- {echo} {cmd!r}')
             os.system(f'{echo} {cmd}')
 
     def build_prompts(self, options):
@@ -182,6 +182,7 @@ class Rungs:
             for menu_name in self.opts.menus:
                 found = self.find_menu(menu_name)
                 if found:
+                    os.system('reset')
                     self.do_menu(found)
         else:
             self.opts.menus = ['ALL-MENUS']

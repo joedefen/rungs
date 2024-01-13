@@ -21,6 +21,8 @@ class Term:
     @staticmethod
     def erase_line(): return f'{Term.esc}[2K'
     @staticmethod
+    def bold(): return f'{Term.esc}[1m'
+    @staticmethod
     def reverse_video(): return f'{Term.esc}[7m'
     @staticmethod
     def normal_video(): return f'{Term.esc}[m'
@@ -71,7 +73,7 @@ class Menu:
         self.input = ''
         self.default_bottom = 'Use Up/Down/key to highlight and Enter to select'
         self.prev_bottom = self.default_bottom
-        self._refresh(clear=True)
+        self._refresh(clear=False)
         if default in self.prompts:
             idx = list(self.prompts.keys()).index(default)
             self._move(idx - self.selected)
@@ -83,7 +85,8 @@ class Menu:
         self.pos = len(self.prompts)
         if clear:
             print(Term.clear_screen(), end='', flush=True)
-        print(f'     <<<< {self.title} >>>>' + '\n'*len(self.prompts))
+        print(f'\n\n     {Term.bold()}<<<< {self.title} >>>>'
+              + Term.normal_video() + '\n'*len(self.prompts))
         for idx in range(0, len(self.lines)+1):
             print(self._get_line_str(idx), end='', flush=True)
         self._bottom_line()
@@ -101,7 +104,9 @@ class Menu:
         return Term.pos_down(cnt)
 
     def _get_line_str(self, idx):
-        """ Returns the string to write for the given line of the menu. """
+        """ Returns the string to write for the given line of the menu.
+            'where' overrides the line to put it on.
+        """
         idx = 0 if idx < 0 else len(self.lines) if idx > len(self.lines) else idx
         action, pre, on, off = '', ' ', '', ''
         if idx == self.selected and idx < len(self.lines):
@@ -167,7 +172,7 @@ class Menu:
                 return rv
 
     def _bottom_line(self, string=None):
-        """ Draw/redrawn the bottom line possibly with an error message """
+        """ Draw/redraw the bottom line possibly with an error message """
         self.prev_bottom = string if string else self.prev_bottom
         action = self._set_pos_str(len(self.lines))
         action += Term.erase_line()
@@ -181,9 +186,24 @@ class Menu:
         """ Complete the menu selection by moving the cursor after the
             menu and printing any given message.
         """
-        cnt = 1 + len(self.lines) - self.selected
-        action = Term.pos_down(cnt) + string
-        print(action, flush=True)
+#       cnt = 1 + len(self.lines) - self.selected
+#       action = Term.pos_down(cnt) + string
+#       print(action, flush=True)
+#       for _ in range(cnt-1, -1):
+#           action += Term.pos_up(1) + Term.erase_line()
+        # action += '    ' + Term.reverse_video()
+        # self.max_line = max(len(self.lines[self.selected]), self.max_line)
+        # action += self.lines[self.selected][:self.cols]
+#       print(action, 'RUN\n', flush=True)
+        for idx in range(len(self.lines)):
+            print(self._set_pos_str(idx) + Term.erase_line(), end='')
+        print(Term.pos_down(1) + Term.erase_line(), end='', flush=True)
+        
+        
+        action = Term.pos_up(1+len(self.lines)) + Term.erase_line()
+        action += Term.reverse_video() + 'PICK' + Term.normal_video() + ': '
+        action += self.lines[self.selected][:self.cols-6]
+        print(action + Term.pos_down(3), end='', flush=True)
 
     def _restore_default_bottom(self):
         """ After the user does something right, clear the error message. """
