@@ -80,6 +80,11 @@ class Rungs:
             for option, value in values.items():
                 print(f'{option}: {value}')
 
+    @staticmethod
+    def ordinary(name): # not special
+        """ Return true if the name starts with a word character"""
+        return bool(re.match(r'\w', name))
+
 
     def run_cmd(self, cmd, precmd=None):
         """Run a command and option prior command
@@ -119,12 +124,13 @@ class Rungs:
 
     def make_section_menu(self):
         """ In the case there are no specified menus, make a menu of them all """
-        keys = 'abcdefghijklmnopqrstuvwyz0123456780ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        keys = 'abcdefghijklmnopqrstuvwyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         options = {}
         for section in self.menus:
-            key, keys = keys[:1], keys[1:]
-            if key:
-                options[key] = f'rungs {section}'
+            if self.ordinary(section):
+                key, keys = keys[:1], keys[1:]
+                if key:
+                    options[key] = f"rungs '{section}'"
 
         options['x'] = 'exit'
         return options
@@ -169,18 +175,19 @@ class Rungs:
             ##### look for case independent match
         if not found:
             for name in self.menus:
-                if wanted.lower() == name.lower():
+                if self.ordinary(name) and wanted.lower() == name.lower():
                     founds.append(name)
             ##### look for case independent partial match
         if not found and not founds:
             for name in self.menus:
-                if within_on_boundary(wanted.lower(), name.lower()):
+                if self.ordinary(name) and within_on_boundary(
+                                wanted.lower(), name.lower()):
                     founds.append(name)
         if not found and founds:
             found = founds[0] if len(founds) == 1 else found
 
         if not found and len(founds) > 1:
-            print(f'ERROR: multiple {wanted!r} in {list(self.menus)}')
+            print(f'ERROR: multiple {wanted!r} in {list(founds)}')
         elif not found and len(founds) < 1:
             print(f'ERROR: no {wanted!r} in {list(self.menus)}')
         return found

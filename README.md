@@ -72,13 +72,17 @@ options:
 ```
 Thus, you can:
 * run `rungs --edit` to edit the configuration file.
-* run `rungs` with no arguments to given a menu of all the defined menus.
+* run `rungs` with no arguments to given a menu of all the "ordinary" menus.
 * provide the name specifiers of the menus to run them; each name spec can match:
   * exactly,
-  * case independent exactly (if unique),
-  * or case independent substring match but only at word boundaries (if unique); e.g., for the menus, `['edit-rungs-config', 'example', 'eos-update']`:
+  * case independent exactly (if unique and ordinary),
+  * or case independent substring match but only at word boundaries (if unique and ordinary); e.g., for the menus, `['edit-rungs-config', 'example', 'eos-update']`:
     * these name specs would find a menu:  'edit', 'ex', 'EOS-', 'EOS-UPDATE'
     * these name specs would NOT: 'date', 'e'.
+    
+**"Special" (vs "Ordinary")** menu names begin with character other than [_A-Za-z0-9], and are excluded from being run unless given the whole, exact, memory sensitive name. A suggested naming convention for menus:
+* beginning `>` for a sub-menu that should not be called independently
+* beginning `!` for a deprecated menu (but not ready to remove it)
     
 ## The Edit Menu and Handling Corrupt .ini Files
 On first startup, the .ini file contains a menu for editing that you may customize:
@@ -99,5 +103,11 @@ For example, you might change the default from `vi` to `geany` if installed and 
 * The `edit-rungs-config` shows how to pass variables to your commands.
 * In case of a corrupt `.ini`, you will see the error and the `edit-rungs-config` menu.
 * Each time the `.ini` file is read and valid, `~/.config/rungs/rungs.ini.bak` is written; in the case you just made a terrible change, recover using the `.ini.bak` file manually (w/o running `rungs -e`).
+
+## Practical Examples
+The `examples` subdirectory includes more practical examples, including
+* A two-level menu for Fedora updates and release upgrades.
+
+These menus many not be current and are not tested; use only after reviewing for correctness and completeness.
 
 
