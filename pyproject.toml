@@ -31,15 +31,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-version = "1.0.6"
+version = "1.0.7"
 name = "rungs"
 authors = [
     {name = "Joe Defen", email = "joedef@gmail.com"},
 ]
-description = "Report Proportional Memory on Linux"
+description = "Menu for Fuzzy Linux Procedures"
 readme = "README.md"
 requires-python = ">=3.8"
-keywords = ["proportional memory"]
+keywords = ["menu", "maintenance", "procedure", "fuzzy"]
 license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
