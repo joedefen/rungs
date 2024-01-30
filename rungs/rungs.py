@@ -11,6 +11,7 @@ import os
 import traceback
 import re
 import shutil
+import shlex
 from configparser import ConfigParser
 try:
     from InlineMenu import Menu
@@ -51,6 +52,8 @@ class Rungs:
                 f.write('   command-b\n')
                 f.write('x: exit\n')
         self.config = ConfigParser(interpolation=None)
+        self.config.optionxform = str # makes keys case sensitive
+                      
         self.read_file()
         for section, options in self.config.items():
             if section != 'DEFAULT':
@@ -86,16 +89,16 @@ class Rungs:
         return bool(re.match(r'\w', name))
 
 
-    def run_cmd(self, cmd, precmd=None):
-        """Run a command and option prior command
-           - clear the screen first
-           - if dry run, clear the screen first
+    def run_cmd(self, cmd, precmd=None, dry_run=None):
+        """Run a command and optional prior command;
+           - opts.args.dry_run can be overridden
          """
-        echo = 'echo -e WOULD RUN:' if self.opts.dry_run else 'set -x; '
+        dry_run = self.opts.dry_run if dry_run is None else dry_run
+        echo = 'echo -e WOULD RUN:' if dry_run else 'set -x; '
         # os.system('clear')
-        if self.opts.dry_run:
-            cmd = f'{cmd!r}'
-            precmd = f'{precmd!r}' if precmd else None
+        if dry_run:
+            cmd = shlex.quote(cmd)
+            precmd = shlex.quote(precmd) if precmd else None
         if precmd:
             # print(f'1 ---- {echo} {precmd!r}')
             os.system(f'{echo} {precmd}')
@@ -148,8 +151,11 @@ class Rungs:
             if cmd in ('exit', 'quit'):
                 return
             if cmd.startswith('rungs '):
-                cmd = f'python3 "{self.rung_cmd}" {cmd[5:]}'
-            self.run_cmd(cmd)
+                opts=' -n' if self.opts.dry_run else ''
+                cmd = f'python3 "{self.rung_cmd}"{opts} {cmd[5:]}'
+                self.run_cmd(cmd, dry_run=False)
+            else:
+                self.run_cmd(cmd)
 
             idx = keys.index(choice)
             todo = keys[min(idx+1, len(keys)-1)]
