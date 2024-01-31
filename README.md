@@ -30,18 +30,18 @@ Notes:
   * `exit` which means exit the menu.
   * `rungs {menu-name}` runs rungs recursively using `python3`
 * To run a command:
-  * highlight the command by typing the character before the ':' or move the cursor with the up/down arrow keys.
+  * highlight the command by typing the "key" before the ':' or move the cursor with the up/down arrow keys.
   * then press ENTER.
 * After the command runs, the next command is highlighted and runs with just ENTER if desired.
 * To, repeat and skip commands, just select another command rather than the next.
 * **IMPORTANT: If the menu does not fit within your terminal, then resize until it does fit.**
 
-## Config: `~/.config/rungs/rungs.ini`
+## `rungs` Config: `~/.config/rungs/rungs.ini`
 Edit `~/.config/rungs/rungs.ini` to configure your menu. The "eos-update-menu" was configured by adding this section:
 ```
 [eos-update]
 a: my-snaps               # replace snaps of root, home, etc 
-b: reflector-simple       # update Arch mirrors
+b: sudo reflector -l20 -cus,ca --sort rate --save /etc/pacman.d/mirrorlist
 c: eos-rankmirrors        # update EndeavourOS mirrors
 d: eos-update --yay       # EndeavourOS update script
 e: sudo paccache -rk1; sudo paccache -ruk0 # cleanup cache
@@ -57,6 +57,10 @@ So, the config looks nearly the same as the menu, but if you specify a multiline
 * the subsequent lines are given to bash literally.
 
 In this manner, for very complicated commands, you can provide a summary description of what is to be run.
+
+Additionally:
+* keys must be a single character and unique
+* if you specify an multicharacter key, only the lead character is used in the menu
 
 ## `rungs` Command Line
 ```

@@ -6,6 +6,7 @@
 """
 # pylint: disable=import-outside-toplevel,invalid-name
 # pylint: disable=too-many-branches,broad-exception-caught
+# pylint: disable=too-many-instance-attributes
 
 import os
 import traceback
@@ -52,13 +53,13 @@ class Rungs:
                 f.write('   command-b\n')
                 f.write('x: exit\n')
         self.config = ConfigParser(interpolation=None)
-        self.config.optionxform = str # makes keys case sensitive
-                      
+        self.config.optionxform = lambda x: str(x)[:1] # makes keys case sensitive
+
         self.read_file()
         for section, options in self.config.items():
             if section != 'DEFAULT':
                 self.menus[section] = options
-                
+
     def read_file(self):
         """ Read the config file ... if not working, try the backup file"""
         try:
@@ -70,7 +71,7 @@ class Rungs:
             self.config.read(filenames=[self.config_backup], encoding='utf-8')
             self.corrupt_config = True
             return
-            
+
         # after every successful read of the original, copy it to the backup as
         # last known good copy
         shutil.copy(self.config_file, self.config_backup)
