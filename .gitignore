@@ -1,6 +1,7 @@
 rungs.bundle
-dist/*
-__pycache__/*
-*/__pycache__/*
+dist/
+__pycache__/
+*/__pycache__/
 *.py[cod]
-.vscode/*
+.vscode/
+*.egg-info/

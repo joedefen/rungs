@@ -8,11 +8,17 @@
 #      python3 -m pip install --upgrade pip
 #      python3 -m pip install --upgrade build
 #      python3 -m pip install --upgrade twine
+#
+# Run w/o install from project dir
+#   S=$PWD/src
+#   PYTHONPATH=$S python3 src/rungs/main.py
+# 
+# Run with local install
+#   rm -r dist; python3 -m build; ls dist/. ; pip install -e . --break-system-packages
 # 
 # PUBLIC Build and deploy (from project directory):
 #   ## BUMP the version (below in [project])
-#   rm -r dist; python3 -m build; ls dist/.
-#   python3 -m twine upload dist/*
+#   rm -r dist; python3 -m build; ls dist/. ; python3 -m twine upload dist/*
 #     ## Enter __token__ and the saved TOKEN (in bitwarden)
 #   pipx upgrade rungs || pipx install rungs # >= python3.11
 #   --OR-- sudo python3 -m pip install rungs # <= python3.10
@@ -27,32 +33,28 @@
 #   ## VISIT  https://test.pypi.org/project/rungs and delete old versions
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
-version = "1.0.9"
+version = "1.0.11"
 name = "rungs"
 authors = [
     {name = "Joe Defen", email = "joedef@gmail.com"},
 ]
 description = "Menu for Fuzzy Linux Procedures"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.8"
 keywords = ["menu", "maintenance", "procedure", "fuzzy"]
-license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux"
 ]
-dependencies = [
-    "requests",
-    'importlib-metadata; python_version<"3.8"',
-]
 
 [project.scripts]
-rungs = "rungs.rungs:run"
+rungs = "rungs.main:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rungs"]
