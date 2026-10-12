@@ -23,6 +23,14 @@ try:  # installed / run as a package (``python -m rungs.main``)
 except ImportError:  # run as a plain script (``python3 src/rungs/main.py``)
     from InlineMenu import Menu
 
+try:  # single source of truth lives in rungs/__init__.py
+    from . import __version__
+except ImportError:  # plain-script mode: fall back to the installed package
+    try:
+        from rungs import __version__
+    except ImportError:
+        __version__ = 'unknown'
+
 
 class Rungs:
     """Fuzzy script tool workhorse class."""
@@ -95,19 +103,19 @@ class Rungs:
         return bool(re.match(r'\w', name))
 
     def run_cmd(self, cmd, precmd=None, dry_run=None):
-        """Run a command and optional prior command;
-           - opts.args.dry_run can be overridden
-         """
+        """ Run `cmd` (optionally preceded by `precmd`) through the shell.
+
+            Returns the exit status of the last command run -- always 0 in
+            dry-run mode -- so callers can surface a failing step instead of
+            silently swallowing it (as ``os.system`` did).
+        """
         dry_run = self.opts.dry_run if dry_run is None else dry_run
-        echo = 'echo -e WOULD RUN:' if dry_run else 'set -x; '
+        script = '\n'.join(part for part in (precmd, cmd) if part)
         if dry_run:
-            cmd = shlex.quote(cmd)
-            precmd = shlex.quote(precmd) if precmd else None
-        if precmd:
-            os.system(f'{echo} {precmd}')
-            os.system(f'{echo} {cmd}')
-        else:
-            os.system(f'{echo} {cmd}')
+            print(f'WOULD RUN: {script}', flush=True)
+            return 0
+        print(f'==> {script}', flush=True)
+        return subprocess.run(script, shell=True, check=False).returncode
 
     def relaunch(self, menu_spec):
         """ Launch a sub-menu in a fresh `rungs` process.
@@ -132,7 +140,7 @@ class Rungs:
             argv += shlex.split(menu_spec)
         except ValueError:
             argv.append(menu_spec)
-        subprocess.run(argv, env=env, check=False)
+        return subprocess.run(argv, env=env, check=False).returncode
 
     def build_prompts(self, options):
         """ From the "options" in the section's options, create
@@ -170,16 +178,19 @@ class Rungs:
         keys, prompts, cmds = self.build_prompts(options)
 
         todo = keys[0]
+        notice = None
         while True:
-            menu = Menu(prompts, todo, title=menu_name)
+            menu = Menu(prompts, todo, title=menu_name, notice=notice)
             choice = menu.prompt()
             cmd = cmds[choice]
             if cmd in ('exit', 'quit'):
                 return
             if cmd.startswith('rungs '):
-                self.relaunch(cmd[len('rungs '):])
+                status = self.relaunch(cmd[len('rungs '):])
             else:
-                self.run_cmd(cmd)
+                status = self.run_cmd(cmd)
+
+            notice = f'{choice!r} exited with status {status}' if status else None
 
             idx = keys.index(choice)
             todo = keys[min(idx + 1, len(keys) - 1)]
@@ -231,6 +242,8 @@ class Rungs:
                             help='edit config (i.e., runs edit-rungs-config)')
         parser.add_argument('-n', '--dry-run', action="store_true",
                             help='show commands w/o running them')
+        parser.add_argument('--version', action='version',
+                            version=f'%(prog)s {__version__}')
         parser.add_argument('menus', nargs='*',
                             help='zero or more menu name specifiers')
         self.opts = parser.parse_args()

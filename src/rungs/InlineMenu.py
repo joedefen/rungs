@@ -39,11 +39,16 @@ class Term:
 
 class Menu:
     """ A simple menu system """
-    fd = sys.stdin.fileno()
     save_attrs = None
 
     class InputTimeout(Exception):
         """ Raised for obvious reasons. """
+
+    @staticmethod
+    def _fileno():
+        """ stdin's file descriptor, resolved lazily so that merely importing
+            this module does not require a real (tty) stdin. """
+        return sys.stdin.fileno()
 
     @staticmethod
     def _prompt_mode(enable=False):
@@ -52,14 +57,15 @@ class Menu:
         """
         if enable:
             if not Menu.save_attrs:
-                Menu.save_attrs = termios.tcgetattr(Menu.fd)
-                tty.setcbreak(Menu.fd)
+                Menu.save_attrs = termios.tcgetattr(Menu._fileno())
+                tty.setcbreak(Menu._fileno())
         else:
             if Menu.save_attrs:
-                termios.tcsetattr(Menu.fd, termios.TCSADRAIN, Menu.save_attrs)
+                termios.tcsetattr(Menu._fileno(), termios.TCSADRAIN,
+                                  Menu.save_attrs)
                 Menu.save_attrs = None
 
-    def __init__(self, prompts, default=None, title=''):
+    def __init__(self, prompts, default=None, title='', notice=None):
         self.prompts = prompts
         self.lines = []
         self.selected = len(prompts)
@@ -72,7 +78,7 @@ class Menu:
             self.lines.append(f'{key}: {prompt}')
         self.input = ''
         self.default_bottom = 'Use Up/Down/key to highlight and Enter to select'
-        self.prev_bottom = self.default_bottom
+        self.prev_bottom = notice if notice else self.default_bottom
         self._refresh(clear=False)
         if default in self.prompts:
             idx = list(self.prompts.keys()).index(default)

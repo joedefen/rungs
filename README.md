@@ -4,6 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/rungs.svg)](https://pypi.org/project/rungs/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/joedefen/rungs/blob/main/LICENSE)
 [![PyPI downloads](https://img.shields.io/pypi/dm/rungs.svg)](https://pypi.org/project/rungs/)
+[![CI](https://github.com/joedefen/rungs/actions/workflows/ci.yml/badge.svg)](https://github.com/joedefen/rungs/actions/workflows/ci.yml)
 
 `rungs` turns a plain `.ini` file into a friendly, keyboard-driven menu for
 running shell commands — one **rung** at a time up the ladder of a procedure.
@@ -124,6 +125,7 @@ options:
   -h, --help     show this help message and exit
   -e, --edit     edit config (i.e., runs edit-rungs-config)
   -n, --dry-run  show commands w/o running them
+  --version      show program's version number and exit
 ```
 
 Menu names can be matched:
@@ -156,9 +158,16 @@ If your `.ini` ever becomes corrupt, `rungs` prints the error and drops you into
 
 ## Examples
 
-The [`samples/`](samples/) directory contains ready-to-adapt menus, including a
-two-level Fedora update + release-upgrade procedure. These are **not** tested
-against the latest distro releases — review them before running.
+The [`samples/`](samples/) directory has ready-to-adapt menus:
+
+* [`UbuntuUpdateUpgrade.ini`](samples/UbuntuUpdateUpgrade.ini) — `apt`/`snap`/`flatpak`
+  update plus a two-level LTS release upgrade.
+* [`FedoraUpdateUpgrade.ini`](samples/FedoraUpdateUpgrade.ini) — `dnf` update plus a
+  two-level Fedora release upgrade.
+* [`DockerMaintenance.ini`](samples/DockerMaintenance.ini) — reclaim Docker disk space
+  (images, containers, volumes, build cache).
+
+These are **not** tested against the latest distro releases — review them before running.
 
 ## Recipes
 
@@ -174,7 +183,10 @@ against the latest distro releases — review them before running.
 git clone https://github.com/joedefen/rungs.git
 cd rungs
 python3 -m venv .venv && . .venv/bin/activate
-python3 -m pip install -e .
+python3 -m pip install -e '.[test]'
+
+# run the test suite
+python3 -m pytest
 
 # run from source, no install needed:
 ./runner --help

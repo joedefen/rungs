@@ -3,17 +3,20 @@
 # ==============================================================================
 #
 # Runs WITHOUT installing (from the project directory):
-#   PYTHONPATH=src python3 src/rungs/main.py
-#   PYTHONPATH=src python3 src/rungs/main.py --help
+#   ./runner                              # dev wrapper (recommended)
+#   PYTHONPATH=src python3 src/rungs/main.py   # equivalent
 #
 # Editable install for local hacking:
 #   python3 -m venv .venv && . .venv/bin/activate
-#   python3 -m pip install -e .
+#   python3 -m pip install -e '.[test]'
 #   rungs
 #
+# TESTS:
+#   python3 -m pytest
+#
 # BUILD & PUBLISH (flit, no twine needed):
-#   python3 -m pip install --user flit   # or: pipx install flit
-#   ## bump the version below in [project]
+#   python3 -m pip install --user flit    # or: pipx install flit
+#   ## bump the version in src/rungs/__init__.py (single source of truth)
 #   flit build                            # writes dist/ (sdist + wheel)
 #   flit publish                          # upload to PyPI (prompts for token)
 #   ## TestPyPI dry-run:
@@ -29,7 +32,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "rungs"
-version = "1.1.0"
+dynamic = ["version"]
 description = "Interactive step-through menus for fuzzy Linux maintenance procedures"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -65,11 +68,19 @@ classifiers = [
 [project.scripts]
 rungs = "rungs.main:run"
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [project.urls]
 Homepage = "https://github.com/joedefen/rungs"
 Repository = "https://github.com/joedefen/rungs"
 Issues = "https://github.com/joedefen/rungs/issues"
 Changelog = "https://github.com/joedefen/rungs/releases"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
 
 [tool.flit.sdist]
 include = ["samples/", "images/"]
