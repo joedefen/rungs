@@ -222,10 +222,10 @@ class Menu:
                     ans += key
                     if key.isalnum() or key in ('\r', '\n', ' '):
                         break
-                if ans in ('\033[A', '\033[C'):
+                if ans == '\033[A':          # Up arrow
                     self._restore_default_bottom()
                     self._move(-1)
-                elif ans in ('\033[B', '\033[C'):
+                elif ans == '\033[B':        # Down arrow
                     self._restore_default_bottom()
                     self._move(1)
                 elif ans in ('\r', '\n', ' '):
@@ -245,19 +245,3 @@ class Menu:
                     self._bottom_line(f'invalid({repr(ans)}); pick again')
             finally:
                 self._prompt_mode(enable=False)
-
-def runner(_): # def runner(argv):
-    """ TBD """
-    while True:
-        opts = {
-            'q': 'Quit',
-            'A': 'Set root password [suggested: "pw"]',
-            'B': 'Set current user password [suggested: "pw"]',
-            'u': 'Update Linux -- run after ChromeOS update (at least)',
-            'r': 'Refresh Icons -- fix cases of icons becoming lost',
-        }
-        menu = Menu(opts, 'u')
-        picked = opts[menu.prompt()]
-        print(f'\n===> To run: {picked}\n')
-        if 'Quit' in picked:
-            sys.exit(0)

@@ -1,69 +1,76 @@
-# HOW TO PUBLISH...
+# ==============================================================================
+# rungs -- build / release cheatsheet
+# ==============================================================================
 #
-# Prep Work (ensure need modules are up-to-date):
-#   sudo pacman -Syu python-pip
-#   sudo pacman -Syu python-build
-#   sudo pacman -Syu python-twine
-#   -- antiquated way
-#      python3 -m pip install --upgrade pip
-#      python3 -m pip install --upgrade build
-#      python3 -m pip install --upgrade twine
+# Runs WITHOUT installing (from the project directory):
+#   PYTHONPATH=src python3 src/rungs/main.py
+#   PYTHONPATH=src python3 src/rungs/main.py --help
 #
-# Run w/o install from project dir
-#   S=$PWD/src
-#   PYTHONPATH=$S python3 src/rungs/main.py
-# 
-# Run with local install
-#   rm -r dist; python3 -m build; ls dist/. ; pip install -e . --break-system-packages
-# 
-# PUBLIC Build and deploy (from project directory):
-#   ## BUMP the version (below in [project])
-#   rm -r dist; python3 -m build; ls dist/. ; python3 -m twine upload dist/*
-#     ## Enter __token__ and the saved TOKEN (in bitwarden)
-#   pipx upgrade rungs || pipx install rungs # >= python3.11
-#   --OR-- sudo python3 -m pip install rungs # <= python3.10
-#   ## VISIT  https://pypi.org/project/rungs and delete old versions
+# Editable install for local hacking:
+#   python3 -m venv .venv && . .venv/bin/activate
+#   python3 -m pip install -e .
+#   rungs
 #
-# TEST Build and test (from project directory):
-#   ## BUMP the version (below in [project])
-#   rm -r dist; python3 -m build
-#   python3 -m twine upload --repository testpypi dist/*
-#     ## Enter __token__ and the saved TOKEN (in bitwarden)
-#   sudo python3 -m pip install --index-url https://test.pypi.org/simple/ --no-deps rungs
-#   ## VISIT  https://test.pypi.org/project/rungs and delete old versions
+# BUILD & PUBLISH (flit, no twine needed):
+#   python3 -m pip install --user flit   # or: pipx install flit
+#   ## bump the version below in [project]
+#   flit build                            # writes dist/ (sdist + wheel)
+#   flit publish                          # upload to PyPI (prompts for token)
+#   ## TestPyPI dry-run:
+#   flit publish --repository testpypi
+#   ## install the result:
+#   pipx upgrade rungs || pipx install rungs
+#
+# ==============================================================================
 
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["flit_core>=3.11,<5"]
+build-backend = "flit_core.buildapi"
 
 [project]
-version = "1.0.11"
 name = "rungs"
-authors = [
-    {name = "Joe Defen", email = "joedef@gmail.com"},
-]
-description = "Menu for Fuzzy Linux Procedures"
+version = "1.1.0"
+description = "Interactive step-through menus for fuzzy Linux maintenance procedures"
 readme = "README.md"
-license = { text = "MIT" }
-requires-python = ">=3.8"
-keywords = ["menu", "maintenance", "procedure", "fuzzy"]
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Joe Defen", email = "joedef@gmail.com" },
+]
+keywords = [
+    "menu",
+    "maintenance",
+    "procedure",
+    "fuzzy",
+    "cli",
+    "tui",
+    "linux",
+    "system-administration",
+]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: POSIX :: Linux"
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
 ]
 
 [project.scripts]
 rungs = "rungs.main:run"
 
-[tool.hatch.build.targets.wheel]
-packages = ["rungs"]
-
-[tool.hatch.build.targets.sdist]
-exclude = [
-    "/rungs/__pycache__",
-]
-
 [project.urls]
-"Homepage" = "https://github.com/joedefen/rungs"
-"Bug Tracker" = "https://github.com/joedefen/rungs/issues"
+Homepage = "https://github.com/joedefen/rungs"
+Repository = "https://github.com/joedefen/rungs"
+Issues = "https://github.com/joedefen/rungs/issues"
+Changelog = "https://github.com/joedefen/rungs/releases"
+
+[tool.flit.sdist]
+include = ["samples/", "images/"]
+exclude = ["src/rungs/__pycache__/"]

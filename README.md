@@ -1,117 +1,198 @@
-# rungs -- A Tool for Fuzzy Procedures
-`rungs` is a tool help navigate "fuzzy" procedures on Linux where you might want to:
-* skip certain steps if certain vague criteria are met
-* repeat certain steps if they failed and trying again makes sense
+# rungs — interactive menus for fuzzy Linux procedures
 
-You very simply specify your procedures within a single `.ini` file.
+[![PyPI version](https://img.shields.io/pypi/v/rungs.svg)](https://pypi.org/project/rungs/)
+[![Python versions](https://img.shields.io/pypi/pyversions/rungs.svg)](https://pypi.org/project/rungs/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/joedefen/rungs/blob/main/LICENSE)
+[![PyPI downloads](https://img.shields.io/pypi/dm/rungs.svg)](https://pypi.org/project/rungs/)
 
-> **Quick Start**: from the CLI
-> * **If `python3 -V` shows v3.11 or later, install using `pipx`**:
->   * `python3 -m pip install --user pipx # if pipx not installed`
->   * `python3 -m pipx ensurepath # if needed (restart terminal)`
->   * `pipx upgrade rungs || pipx install rungs # to install/upgrade`
-> * **Else for python3.10 and lesser versions, install using `pip`**:
->   * `python3 -m pip install --user --upgrade rungs`
-> * **To run**:
->   * `rungs # to run and show all menus`
->   * `rungs {menu-name} # run the specified menu`
->   * `rungs --edit # edit your menus`
+`rungs` turns a plain `.ini` file into a friendly, keyboard-driven menu for
+running shell commands — one **rung** at a time up the ladder of a procedure.
 
-**Mnemonic**: step through the **rungs** of your laddered procedure ;-)
+It is built for *fuzzy* procedures on Linux, where the exact steps depend on
+what you encounter along the way:
 
-##  A Practical Example -- Manually Updating EndeavourOS
-Here is an example menu for manually update an EndeavourOS:
+* **skip** steps whose vague preconditions are already met, and
+* **repeat** steps that failed — because retrying them makes sense.
+
+Instead of scrolling back through your shell history (or keeping a notes file
+of cryptic one-liners), you get a menu where you highlight the next step, hit
+<kbd>Enter</kbd>, and watch it run. Which step you run next is your call.
+
+Typical configs are **system updates** and **Docker housekeeping** — the chores
+with "too many commands to remember".
 
 ![eos-update-menu](https://github.com/joedefen/rungs/blob/main/images/eos-update-menu.png?raw=true)
 
-Notes:
-* Except for the first personal command, all commands are standard on EndeavourOS.
-* All commands are run literally by `bash` except:
-  * `exit` which means exit the menu.
-  * `rungs {menu-name}` runs rungs recursively using `python3`
-* To run a command:
-  * highlight the command by typing the "key" before the ':' or move the cursor with the up/down arrow keys.
-  * then press ENTER.
-* After the command runs, the next command is highlighted and runs with just ENTER if desired.
-* To, repeat and skip commands, just select another command rather than the next.
-* **IMPORTANT: If the menu does not fit within your terminal, then resize until it does fit.**
+---
 
-## `rungs` Config: `~/.config/rungs/rungs.ini`
-Edit `~/.config/rungs/rungs.ini` to configure your menu. The "eos-update-menu" was configured by adding this section:
+## Why `rungs`?
+
+| | |
+|---|---|
+| **Fuzzy, not fixed** | A procedure is a *menu*, not a script. You decide what runs next based on what you observe. |
+| **Tiny & self-contained** | Pure Python standard library — no dependencies. One `.ini` file holds every menu. |
+| **Nothing to remember** | Commands live in a readable config; the menu shows descriptions for the messy ones. |
+| **Recoverable** | Every valid config is auto-backed-up to `rungs.ini.bak`, so a bad edit is easy to undo. |
+| **Composable** | Menus can launch other menus, so you can build multi-level procedures. |
+
+## Requirements
+
+* Python **3.11+**
+* A POSIX-ish terminal (Linux); reads single keypresses via `termios`
+
+## Installation
+
+`rungs` is a console app, so [`pipx`](https://pipx.pypa.io/) is the recommended
+way to install it in an isolated environment:
+
+```sh
+python3 -m pip install --user pipx        # if pipx isn't installed
+python3 -m pipx ensurepath                # if needed (restart your terminal)
+pipx upgrade rungs || pipx install rungs  # install / upgrade
 ```
+
+Prefer a plain `pip` install? That works too:
+
+```sh
+python3 -m pip install --user --upgrade rungs
+```
+
+## Quick start
+
+```sh
+rungs                 # show a menu of all your menus, then pick one
+rungs eos-update      # run a specific menu directly
+rungs --edit          # edit your configuration file
+rungs --dry-run       # show the commands without running them
+```
+
+Once a menu is up:
+
+* type the **key** shown before the `:` (or move with <kbd>↑</kbd>/<kbd>↓</kbd>),
+* press <kbd>Enter</kbd> to run the highlighted command,
+* after it finishes, the **next** entry is pre-selected — just press
+  <kbd>Enter</kbd> to continue, or pick any other entry to skip/repeat.
+
+> **Note:** if a menu does not fit your terminal, resize the terminal until it
+> does — `rungs` re-flows automatically.
+
+## Configuration: `~/.config/rungs/rungs.ini`
+
+The first time you run `rungs` it creates a config for you. A menu is just an
+`.ini` section; each entry is `key: command`.
+
+```ini
 [eos-update]
-a: my-snaps               # replace snaps of root, home, etc 
+a: my-snaps                                 # replace snaps of root, home, etc.
 b: sudo reflector -l20 -cus,ca --sort rate --save /etc/pacman.d/mirrorlist
-c: eos-rankmirrors        # update EndeavourOS mirrors
-d: eos-update --yay       # EndeavourOS update script
-e: sudo paccache -rk1; sudo paccache -ruk0 # cleanup cache
-f: sudo pacman -Rns $(pacman -Qdtq)        # cleanup orphans
+c: eos-rankmirrors                          # update EndeavourOS mirrors
+d: eos-update --yay                         # EndeavourOS update script
+e: sudo paccache -rk1; sudo paccache -ruk0  # cleanup cache
+f: sudo pacman -Rns $(pacman -Qdtq)         # cleanup orphans
 g: flatpak update
 h: flatpak uninstall --unused; flatpak repair
 i: sudo journalctl --vacuum-time=2weeks
 j: sudo reboot now
 x: exit
 ```
-So, the config looks nearly the same as the menu, but if you specify a multiline value, then:
-* the first line is shown, and
-* the subsequent lines are given to bash literally.
 
-In this manner, for very complicated commands, you can provide a summary description of what is to be run.
+Notes:
 
-Additionally:
-* keys must be a single character and unique
-* if you specify an multicharacter key, only the lead character is used in the menu
+* This config mirrors the menu you see, so the menu *is* the documentation.
+* For long commands, put a **description on the first line** and the command on
+  the **indented lines** that follow — the menu shows the description and bash
+  receives the rest, literally:
 
-## `rungs` Command Line
+  ```ini
+  b: prompt-b          # shown in the menu
+     command-b         # sent to bash literally
+  ```
+
+* Keys must be a **single character** and **unique** within a menu. If you use a
+  longer key, only its first character is used.
+* `exit` (or `quit`) closes the menu.
+
+## Command line
+
 ```
 usage: rungs [-h] [-e] [-n] [menus ...]
 
 positional arguments:
-  menus          zero or more arguments
+  menus          zero or more menu name specifiers
 
 options:
   -h, --help     show this help message and exit
   -e, --edit     edit config (i.e., runs edit-rungs-config)
   -n, --dry-run  show commands w/o running them
 ```
-Thus, you can:
-* run `rungs --edit` to edit the configuration file.
-* run `rungs` with no arguments to given a menu of all the "ordinary" menus.
-* provide the name specifiers of the menus to run them; each name spec can match:
-  * exactly,
-  * case independent exactly (if unique and ordinary),
-  * or case independent substring match but only at word boundaries (if unique and ordinary); e.g., for the menus, `['edit-rungs-config', 'example', 'eos-update']`:
-    * these name specs would find a menu:  'edit', 'ex', 'EOS-', 'EOS-UPDATE'
-    * these name specs would NOT: 'date', 'e'.
-    
-**"Special" (vs "Ordinary")** menu names begin with character other than [_A-Za-z0-9], and are excluded from being run unless given the whole, exact, memory sensitive name. A suggested naming convention for menus:
-* beginning `>` for a sub-menu that should not be called independently
-* beginning `!` for a deprecated menu (but not ready to remove it)
-    
-## The Edit Menu and Handling Corrupt .ini Files
-On first startup, the .ini file contains a menu for editing that you may customize:
+
+Menu names can be matched:
+
+* **exactly** (`eos-update`, and any "special" name),
+* **case-insensitively exactly** (if unique and ordinary), e.g. `EOS-UPDATE`,
+* or by a **case-insensitive substring at a word boundary** (if unique and
+  ordinary) — for menus `['edit-rungs-config', 'example', 'eos-update']`:
+  * `edit`, `ex`, `EOS-` and `EOS-UPDATE` all resolve,
+  * but `date` and `e` do **not**.
+
+### Ordinary vs. special menus
+
+A menu name beginning with a word character (`[_A-Za-z0-9]`) is **ordinary** and
+can be fuzzy-matched. A name beginning with anything else is **special**: it is
+hidden from the "all menus" list and only runs when you give its exact name.
+Suggested conventions:
+
+* `>name` — a sub-menu that shouldn't be called on its own,
+* `!name` — a deprecated menu you're not ready to delete yet.
+
+## The edit menu & recovering a broken config
+
+`rungs --edit` opens the `edit-rungs-config` menu, whose default action launches
+`${EDITOR:-vi}`. **Do not remove that menu** — it powers `--edit` *and* recovery.
+
+If your `.ini` ever becomes corrupt, `rungs` prints the error and drops you into
+`edit-rungs-config`. After every successful read, your config is copied to
+`~/.config/rungs/rungs.ini.bak`; restore it manually if you make a terrible edit.
+
+## Examples
+
+The [`samples/`](samples/) directory contains ready-to-adapt menus, including a
+two-level Fedora update + release-upgrade procedure. These are **not** tested
+against the latest distro releases — review them before running.
+
+## Recipes
+
+* **System update:** mirrors → package manager update → flatpak → cache/orphan
+  cleanup → reboot.
+* **Docker housekeeping:** `docker system df` → prune images/containers/volumes →
+  `docker system prune` → review leftover networks.
+* **Onboarding a machine:** snapshots → config sync → dotfiles → reboot.
+
+## Development
+
+```sh
+git clone https://github.com/joedefen/rungs.git
+cd rungs
+python3 -m venv .venv && . .venv/bin/activate
+python3 -m pip install -e .
+
+# run from source, no install needed:
+./runner --help
+# ...which is equivalent to:
+PYTHONPATH=src python3 src/rungs/main.py --help
 ```
-[edit-rungs-config]
-a: ${EDITOR=-vi} ~/.config/rungs/rungs.ini
-x: exit
 
-[example]
-a: command-a
-b: prompt-b
-   command-b
-x: exit
+Releases are built and published with [flit](https://flit.pypa.io/):
+
+```sh
+python3 -m pip install --user flit
+# bump version in pyproject.toml
+flit build              # sdist + wheel in dist/
+flit publish            # upload to PyPI (prompts for your token)
 ```
-For example, you might change the default from `vi` to `geany` if installed and desired. Also, note:
-* You may remove the `example` which shows a multilined value which must be indented lines after the first.
-* Do **NOT** remove the `edit-rungs-config` menu; it is needed for `--edit` option AND recovery.
-* The `edit-rungs-config` shows how to pass variables to your commands.
-* In case of a corrupt `.ini`, you will see the error and the `edit-rungs-config` menu.
-* Each time the `.ini` file is read and valid, `~/.config/rungs/rungs.ini.bak` is written; in the case you just made a terrible change, recover using the `.ini.bak` file manually (w/o running `rungs -e`).
 
-## Practical Examples
-The `examples` subdirectory includes more practical examples, including
-* A two-level menu for Fedora updates and release upgrades.
+## License
 
-These menus many not be current and are not tested; use only after reviewing for correctness and completeness.
+MIT — see [LICENSE](LICENSE).
 
-
+**Mnemonic:** step through the **rungs** of your laddered procedure.
