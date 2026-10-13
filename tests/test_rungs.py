@@ -125,6 +125,76 @@ def test_make_section_menu_lists_only_ordinary(tool):
 
 
 # --------------------------------------------------------------------------- #
+# ad-hoc menu files (any filename, .ini contents)
+# --------------------------------------------------------------------------- #
+def test_find_menu_quiet_suppresses_diagnostics(tool, capsys):
+    tool.menus = {"example": {}}
+    assert tool.find_menu("nope", quiet=True) is None
+    assert capsys.readouterr().out == ""
+
+
+def test_make_section_menu_accepts_explicit_menus(tool):
+    menu = tool.make_section_menu({"adhoc": {}, "!hidden": {}})
+    values = list(menu.values())
+    assert "rungs 'adhoc'" in values
+    assert all("!hidden" not in value for value in values)
+
+
+def test_load_menu_file_parses_and_merges(tool, tmp_path):
+    menu_file = tmp_path / "MyProcedure"  # deliberately no .ini extension
+    menu_file.write_text("[adhoc]\na: echo hi\nx: exit\n", encoding="utf-8")
+
+    file_menus = tool.load_menu_file(str(menu_file))
+    assert set(file_menus) == {"adhoc"}
+    assert "adhoc" in tool.menus        # merged so sub-menus resolve by name
+    assert "adhoc" in tool.file_menus
+    assert tool.menu_file == str(menu_file)
+
+
+def test_load_menu_file_rejects_non_ini(tool, tmp_path, capsys):
+    bad = tmp_path / "not-ini"
+    bad.write_text(INVALID_INI, encoding="utf-8")
+    assert tool.load_menu_file(str(bad)) is None
+    assert "ERROR" in capsys.readouterr().out
+
+
+def test_run_spec_prefers_menu_name(tool, monkeypatch):
+    tool.menus = {"example": {"a": "echo hi"}}
+    picked = []
+    monkeypatch.setattr(tool, "do_menu",
+                        lambda name, options=None: picked.append(name))
+    assert tool.run_spec("example") is True
+    assert picked == ["example"]
+
+
+def test_run_spec_runs_file_path_without_extension(tool, tmp_path, monkeypatch):
+    menu_file = tmp_path / "MyProcedure"  # path contains a '/', no extension
+    menu_file.write_text("[solo]\na: echo hi\nx: exit\n", encoding="utf-8")
+    picked = []
+    monkeypatch.setattr(tool, "do_menu",
+                        lambda name, options=None: picked.append(name))
+    assert tool.run_spec(str(menu_file)) is True
+    assert picked == ["solo"]
+
+
+def test_run_spec_runs_bare_filename(tool, tmp_path, monkeypatch):
+    menu_file = tmp_path / "adhoc"
+    menu_file.write_text("[solo]\na: echo hi\nx: exit\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    picked = []
+    monkeypatch.setattr(tool, "do_menu",
+                        lambda name, options=None: picked.append(name))
+    assert tool.run_spec("adhoc") is True   # no '/' in the spec
+    assert picked == ["solo"]
+
+
+def test_run_spec_misuse_returns_false(tool, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert tool.run_spec("no-such-menu-or-file") is False
+    assert tool.run_spec("some/path/that/does/not/exist") is False
+
+
+# --------------------------------------------------------------------------- #
 # running commands
 # --------------------------------------------------------------------------- #
 def test_run_cmd_dry_run_does_not_execute(tool, capsys, monkeypatch):

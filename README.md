@@ -63,6 +63,7 @@ python3 -m pip install --user --upgrade rungs
 ```sh
 rungs                 # show a menu of all your menus, then pick one
 rungs eos-update      # run a specific menu directly
+rungs my-procedure    # run an .ini file directly (any filename)
 rungs --edit          # edit your configuration file
 rungs --dry-run       # show the commands without running them
 ```
@@ -119,7 +120,7 @@ Notes:
 usage: rungs [-h] [-e] [-n] [menus ...]
 
 positional arguments:
-  menus          zero or more menu name specifiers
+  menus          zero or more menu names or .ini file paths
 
 options:
   -h, --help     show this help message and exit
@@ -136,6 +137,28 @@ Menu names can be matched:
   ordinary) — for menus `['edit-rungs-config', 'example', 'eos-update']`:
   * `edit`, `ex`, `EOS-` and `EOS-UPDATE` all resolve,
   * but `date` and `e` do **not**.
+
+### Running an ad-hoc file
+
+Each positional argument is resolved in order:
+
+1. if it contains **no `/`**, it is tried as a **menu name** first (as above);
+2. otherwise — the name wasn't found, or it contains a `/` — it is treated as a
+   path to an **`.ini` file**. The *filename* may be anything (`my-procedure`,
+   `notes.txt`, ...); only the *contents* must be `.ini` format;
+3. if it is neither a known menu nor a readable menu file, `rungs` treats it as
+   **misuse** and exits with a usage error.
+
+```sh
+rungs samples/DockerMaintenance.ini   # a file (name ends in .ini)
+rungs my-procedure                    # a file by any other name
+rungs ./notes                         # a path containing a slash
+```
+
+An ad-hoc file behaves like a slice of your config: a single ordinary menu
+runs directly, several are offered as a list, and a `>sub` menu defined in the
+file is still reachable via `rungs '>sub'` (the file is handed to the child
+process automatically).
 
 ### Ordinary vs. special menus
 

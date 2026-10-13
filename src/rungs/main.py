@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import sys
 import traceback
-from configparser import ConfigParser
+from configparser import ConfigParser, Error as ConfigError
 
 try:  # installed / run as a package (``python -m rungs.main``)
     from .InlineMenu import Menu
@@ -46,8 +46,11 @@ class Rungs:
         self.config_backup = self.config_file + '.bak'
         self.config = None
         self.menus = {}
+        self.file_menus = {}
+        self.menu_file = None
         self.corrupt_config = False
         self.get_config()
+        self.get_inherited_file()
 
     def get_config(self):
         """ Read in the .ini file
@@ -89,6 +92,46 @@ class Rungs:
         # after every successful read of the original, copy it to the backup as
         # last known good copy
         shutil.copy(self.config_file, self.config_backup)
+
+    def get_inherited_file(self):
+        """ Re-load an ad-hoc menu file inherited from a parent process.
+
+            When one of an ad-hoc file's menus launches a sub-menu, the child
+            ``rungs`` process is told (via ``RUNGS_FILE``) which file to read,
+            so sub-menus defined there remain resolvable.
+        """
+        inherited = os.environ.get('RUNGS_FILE')
+        if inherited and os.path.isfile(inherited):
+            self.load_menu_file(inherited)
+
+    def load_menu_file(self, path):
+        """ Read an ad-hoc menu file (any name; contents must be .ini format).
+
+            The parsed menus are merged into ``self.menus`` (so that sub-menus
+            defined in the file are resolvable by name) and remembered in
+            ``self.file_menus`` / ``self.menu_file``.  Returns the file's own
+            menus, or ``None`` if the file cannot be read / has no menus.
+        """
+        config = ConfigParser(interpolation=None)
+        config.optionxform = lambda x: str(x)[:1]  # keys case sensitive
+        try:
+            with open(path, encoding='utf-8') as handle:
+                config.read_file(handle, source=path)
+        except (OSError, ConfigError) as exc:
+            print(f'ERROR: cannot read menu file {path!r}: {exc}')
+            return None
+
+        file_menus = {section: options
+                      for section, options in config.items()
+                      if section != 'DEFAULT'}
+        if not file_menus:
+            print(f'ERROR: no menus found in menu file {path!r}')
+            return None
+
+        self.menu_file = os.path.abspath(path)
+        self.file_menus = file_menus
+        self.menus.update(file_menus)  # let sub-menus resolve by name
+        return file_menus
 
     def dump(self):
         """ Dump the menus found. """
@@ -132,6 +175,8 @@ class Rungs:
         env = os.environ.copy()
         env['PYTHONPATH'] = os.pathsep.join(
             [pkg_parent] + ([env['PYTHONPATH']] if env.get('PYTHONPATH') else []))
+        if self.menu_file:  # keep ad-hoc file sub-menus reachable in the child
+            env['RUNGS_FILE'] = self.menu_file
 
         argv = [sys.executable, '-m', 'rungs.main']
         if self.opts.dry_run:
@@ -159,11 +204,12 @@ class Rungs:
 
         return keys, prompts, cmds
 
-    def make_section_menu(self):
+    def make_section_menu(self, menus=None):
         """ In the case there are no specified menus, make a menu of them all """
+        menus = self.menus if menus is None else menus
         keys = 'abcdefghijklmnopqrstuvwyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         options = {}
-        for section in self.menus:
+        for section in menus:
             if self.ordinary(section):
                 key, keys = keys[:1], keys[1:]
                 if key:
@@ -195,8 +241,12 @@ class Rungs:
             idx = keys.index(choice)
             todo = keys[min(idx + 1, len(keys) - 1)]
 
-    def find_menu(self, wanted):
-        """ Find the menu given the name spec several different ways. """
+    def find_menu(self, wanted, quiet=False):
+        """ Find the menu given the name spec several different ways.
+
+            When ``quiet`` is true, the "no match"/"multiple" diagnostics are
+            suppressed (used while probing a spec that may name a file).
+        """
         def within_on_boundary(menu_name, name):
             index = 0
             while index < len(name):
@@ -227,11 +277,53 @@ class Rungs:
         if not found and founds:
             found = founds[0] if len(founds) == 1 else found
 
-        if not found and len(founds) > 1:
-            print(f'ERROR: multiple {wanted!r} in {list(founds)}')
-        elif not found and len(founds) < 1:
-            print(f'ERROR: no {wanted!r} in {list(self.menus)}')
+        if not found and not quiet:
+            if len(founds) > 1:
+                print(f'ERROR: multiple {wanted!r} in {list(founds)}')
+            elif len(founds) < 1:
+                print(f'ERROR: no {wanted!r} in {list(self.menus)}')
         return found
+
+    def run_spec(self, spec):
+        """ Run one positional argument.
+
+            A value without a ``/`` is first tried as a menu name (the usual
+            fuzzy matching); if that fails -- or the value contains a ``/`` --
+            it is treated as the path of an ad-hoc ``.ini`` menu file.  Returns
+            ``False`` when it is neither a known menu nor a readable menu file
+            (i.e., misuse).
+        """
+        if '/' not in spec:
+            found = self.find_menu(spec, quiet=True)
+            if found:
+                self.do_menu(found)
+                return True
+
+        if os.path.isfile(spec):
+            return self.run_menu_file(spec)
+
+        return False
+
+    def run_menu_file(self, path):
+        """ Load an ad-hoc menu file and run the appropriate menu(s).
+
+            A single ordinary menu runs directly; several ordinary menus are
+            offered as a list (special ``>name`` menus stay hidden, as in the
+            config).  A file with only special menus runs its first one.
+        """
+        file_menus = self.load_menu_file(path)
+        if not file_menus:
+            return False
+
+        ordinary = [name for name in file_menus if self.ordinary(name)]
+        if len(ordinary) == 1:
+            self.do_menu(ordinary[0])
+        elif ordinary:
+            self.do_menu(os.path.basename(path),
+                         self.make_section_menu(file_menus))
+        else:
+            self.do_menu(next(iter(file_menus)))
+        return True
 
     def main(self):
         """ Parse arguments and dispatch to the requested menu(s). """
@@ -245,17 +337,17 @@ class Rungs:
         parser.add_argument('--version', action='version',
                             version=f'%(prog)s {__version__}')
         parser.add_argument('menus', nargs='*',
-                            help='zero or more menu name specifiers')
+                            help='zero or more menu names or .ini file paths')
         self.opts = parser.parse_args()
         if self.opts.edit or self.corrupt_config:
             self.opts.menus = [self.edit_menu]
         if self.corrupt_config:
             print(f'NOTE: substituting {self.edit_menu!r} ...')
         if self.opts.menus:
-            for menu_name in self.opts.menus:
-                found = self.find_menu(menu_name)
-                if found:
-                    self.do_menu(found)
+            for spec in self.opts.menus:
+                if not self.run_spec(spec):
+                    parser.error(
+                        f'{spec!r} is neither a known menu nor an .ini file')
         else:
             self.opts.menus = ['ALL-MENUS']
             self.do_menu('ALL-MENUS', self.make_section_menu())
