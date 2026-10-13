@@ -114,6 +114,46 @@ Notes:
   longer key, only its first character is used.
 * `exit` (or `quit`) closes the menu.
 
+### Environment variables (`+ENV`)
+
+A section can set environment variables that **every** command in that section
+sees, using a `+ENV` entry whose value is one `NAME=VALUE` per line:
+
+```ini
+[docker-maint]
++ENV: DOCKER_HOST=tcp://127.0.0.1:2375
+      REGISTRY=registry.local
+a: docker system df
+x: exit
+```
+
+Notes:
+
+* The block applies to the **whole section** and is removed when you leave it —
+  your shell is unaffected, and sub-menus launched from the section inherit it.
+* Values are de-quoted and `$VAR` references are expanded when the section
+  starts, so `PATH=$PATH:/opt/bin` works.
+* Keys are reduced to their first character, so the key is literally `+` (from
+  `+ENV`). **Only one `+ENV` block per section** is allowed — list every
+  variable on its own indented line; two `+ENV` entries make the file invalid.
+* Removing variables is not supported.
+* Write `+ENV` first in the section by convention; it reads more clearly,
+  although its position does not change what it does.
+
+To share variables across **all** sections, use the reserved, hidden
+`[__GLOBAL__]` section, which accepts only `+ENV`:
+
+```ini
+[__GLOBAL__]
++ENV: REGISTRY=registry.local
+      PKG=dnf
+```
+
+`[__GLOBAL__]` never appears in the menu list, is applied once at start-up, and
+is inherited by every section and sub-menu. A section's own `+ENV` overrides a
+global of the same name while that section runs, and the global is restored
+afterwards.
+
 ## Command line
 
 ```

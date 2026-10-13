@@ -246,3 +246,99 @@ def test_cli_version_flag(home):
     )
     assert result.returncode == 0
     assert rungs.__version__ in result.stdout
+
+
+# --------------------------------------------------------------------------- #
+# environment directives (+ENV / [__GLOBAL__])
+# --------------------------------------------------------------------------- #
+class _FakeMenu:
+    """Stands in for InlineMenu.Menu so do_menu runs without a tty."""
+
+    seen_env = None
+
+    def __init__(self, prompts, default=None, title="", notice=None):
+        _FakeMenu.seen_env = dict(os.environ)
+
+    def prompt(self):
+        return "x"
+
+
+def test_parse_env_block_pairs_skips_blanks_and_comments():
+    pairs = Rungs.parse_env_block(
+        "A=1\n\n# comment\n; another\nB='two words'\nC=has=equals\n", "s"
+    )
+    assert pairs == [("A", "1"), ("B", "two words"), ("C", "has=equals")]
+
+
+def test_extract_env_pops_directive_only(tool):
+    options = {"a": "echo hi", "+": "FOO=bar"}
+    assert tool.extract_env(options, "m") == [("FOO", "bar")]
+    assert "+" not in options and "a" in options
+
+
+def test_global_section_rejects_non_env_keys(tool, capsys):
+    options = {"+": "G=1", "a": "echo hi"}
+    assert tool.extract_env(options, Rungs.global_section) == [("G", "1")]
+    assert options == {}
+    assert "WARNING" in capsys.readouterr().out
+
+
+def test_do_menu_applies_section_env_then_restores(tool, monkeypatch):
+    monkeypatch.setattr("rungs.main.Menu", _FakeMenu)
+    monkeypatch.setenv("RV_KEEP", "orig")
+
+    tool.do_menu("m", {"x": "exit",
+                       "+": "RV_SCOPE=scoped\nRV_KEEP=changed"})
+
+    assert _FakeMenu.seen_env["RV_SCOPE"] == "scoped"   # visible while running
+    assert _FakeMenu.seen_env["RV_KEEP"] == "changed"
+    assert "RV_SCOPE" not in os.environ                 # removed on exit
+    assert os.environ["RV_KEEP"] == "orig"              # restored
+
+
+def test_section_env_overrides_global(tool, monkeypatch):
+    monkeypatch.setattr("rungs.main.Menu", _FakeMenu)
+    Rungs.apply_env(Rungs.parse_env_block("RV_SHARED=global", "g"))
+    try:
+        tool.do_menu("m", {"x": "exit", "+": "RV_SHARED=section"})
+        assert _FakeMenu.seen_env["RV_SHARED"] == "section"
+        assert os.environ["RV_SHARED"] == "global"   # global restored after
+    finally:
+        os.environ.pop("RV_SHARED", None)
+
+
+def test_global_section_is_hidden_and_applied(home):
+    cfg_dir = home / ".config" / "rungs"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "rungs.ini").write_text(
+        "[__GLOBAL__]\n"
+        "+ENV: RV_GLOBAL=hello\n"
+        "      RV_OTHER=2\n"
+        "\n"
+        "[m]\n"
+        "x: exit\n",
+        encoding="utf-8",
+    )
+    try:
+        tool = Rungs()
+        assert Rungs.global_section not in tool.menus
+        assert "m" in tool.menus
+        assert os.environ["RV_GLOBAL"] == "hello"
+        assert os.environ["RV_OTHER"] == "2"
+    finally:
+        os.environ.pop("RV_GLOBAL", None)
+        os.environ.pop("RV_OTHER", None)
+
+
+def test_load_menu_file_applies_its_global_env(tool, tmp_path):
+    menu_file = tmp_path / "proc.ini"
+    menu_file.write_text(
+        "[__GLOBAL__]\n+ENV: RV_FILE=1\n\n[adhoc]\nx: exit\n",
+        encoding="utf-8",
+    )
+    try:
+        menus = tool.load_menu_file(str(menu_file))
+        assert set(menus) == {"adhoc"}
+        assert os.environ["RV_FILE"] == "1"
+    finally:
+        os.environ.pop("RV_FILE", None)

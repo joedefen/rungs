@@ -36,6 +36,8 @@ class Rungs:
     """Fuzzy script tool workhorse class."""
 
     edit_menu = 'edit-rungs-config'
+    env_key = '+'                 # '+ENV' option key (optionxform truncates it)
+    global_section = '__GLOBAL__'  # env-only section shared by every menu
 
     def __init__(self):
         self.opts = None
@@ -47,6 +49,7 @@ class Rungs:
         self.config = None
         self.menus = {}
         self.file_menus = {}
+        self.global_env = []
         self.menu_file = None
         self.corrupt_config = False
         self.get_config()
@@ -74,8 +77,13 @@ class Rungs:
 
         self.read_file()
         for section, options in self.config.items():
-            if section != 'DEFAULT':
-                self.menus[section] = options
+            if section == 'DEFAULT':
+                continue
+            if section == self.global_section:
+                self.global_env = self.extract_env(dict(options), section)
+                continue
+            self.menus[section] = dict(options)
+        self.apply_env(self.global_env)
 
     def read_file(self):
         """ Read the config file ... if not working, try the backup file """
@@ -121,9 +129,16 @@ class Rungs:
             print(f'ERROR: cannot read menu file {path!r}: {exc}')
             return None
 
-        file_menus = {section: options
-                      for section, options in config.items()
-                      if section != 'DEFAULT'}
+        file_menus = {}
+        global_env = []
+        for section, options in config.items():
+            if section == 'DEFAULT':
+                continue
+            options = dict(options)
+            if section == self.global_section:
+                global_env = self.extract_env(options, section)
+                continue
+            file_menus[section] = options
         if not file_menus:
             print(f'ERROR: no menus found in menu file {path!r}')
             return None
@@ -131,6 +146,7 @@ class Rungs:
         self.menu_file = os.path.abspath(path)
         self.file_menus = file_menus
         self.menus.update(file_menus)  # let sub-menus resolve by name
+        self.apply_env(global_env)     # a file's own [__GLOBAL__] applies too
         return file_menus
 
     def dump(self):
@@ -144,6 +160,70 @@ class Rungs:
     def ordinary(name):  # not special
         """ Return true if the name starts with a word character"""
         return bool(re.match(r'\w', name))
+
+    @staticmethod
+    def parse_env_block(text, section):
+        """ Parse a ``+ENV`` value into ``(name, value)`` pairs.
+
+            The value holds one ``NAME=VALUE`` assignment per line; blank
+            lines and ``#``/``;`` comments are ignored and one layer of
+            matching surrounding quotes is stripped.  Malformed lines are
+            reported and skipped.
+        """
+        pairs = []
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line[0] in ('#', ';'):
+                continue
+            name, sep, value = line.partition('=')
+            name = name.strip()
+            if not sep or not name:
+                print(f'WARNING: ignoring malformed {Rungs.env_key}ENV '
+                      f'entry in {section!r}: {raw.strip()!r}')
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in '\'"':
+                value = value[1:-1]
+            pairs.append((name, value))
+        return pairs
+
+    def extract_env(self, options, section):
+        """ Remove and parse the ``+ENV`` block from a mutable options mapping.
+
+            Returns the section's ``(name, value)`` assignments.  In the global
+            section every option must be ``+ENV``; any other option is reported
+            and dropped.
+        """
+        block = options.pop(Rungs.env_key, None)
+        if section == Rungs.global_section:
+            for stray in list(options):
+                print(f'WARNING: {section} permits only {Rungs.env_key}ENV; '
+                      f'ignoring {stray!r}')
+                options.pop(stray, None)
+        if block is None:
+            return []
+        return Rungs.parse_env_block(block, section)
+
+    @staticmethod
+    def apply_env(pairs):
+        """ Set each ``(name, value)`` in ``os.environ`` (in order), expanding
+            ``$VAR`` references -- ``subprocess`` never expands env values for
+            us.  Returns the previous values so the caller can restore them.
+        """
+        saved = []
+        for name, value in pairs:
+            saved.append((name, os.environ.get(name)))
+            os.environ[name] = os.path.expandvars(value)
+        return saved
+
+    @staticmethod
+    def restore_env(saved):
+        """ Undo a matching :meth:`apply_env`, restoring the prior values. """
+        for name, old in reversed(saved):
+            if old is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = old
 
     def run_cmd(self, cmd, precmd=None, dry_run=None):
         """ Run `cmd` (optionally preceded by `precmd`) through the shell.
@@ -219,27 +299,41 @@ class Rungs:
         return options
 
     def do_menu(self, menu_name, options=None):
-        """ Show a menu and run the picked command until the user exits. """
-        options = options if options else self.menus.get(menu_name)
+        """ Show a menu and run the picked command until the user exits.
+
+            Any ``+ENV`` block in the section is applied for the whole section
+            and removed again on the way out (even on error or interrupt).
+        """
+        if options is None:
+            options = self.menus.get(menu_name)
+        options = dict(options) if options else {}
+        env_pairs = self.extract_env(options, menu_name)
         keys, prompts, cmds = self.build_prompts(options)
+        if not keys:
+            return
 
-        todo = keys[0]
-        notice = None
-        while True:
-            menu = Menu(prompts, todo, title=menu_name, notice=notice)
-            choice = menu.prompt()
-            cmd = cmds[choice]
-            if cmd in ('exit', 'quit'):
-                return
-            if cmd.startswith('rungs '):
-                status = self.relaunch(cmd[len('rungs '):])
-            else:
-                status = self.run_cmd(cmd)
+        saved = self.apply_env(env_pairs)
+        try:
+            todo = keys[0]
+            notice = None
+            while True:
+                menu = Menu(prompts, todo, title=menu_name, notice=notice)
+                choice = menu.prompt()
+                cmd = cmds[choice]
+                if cmd in ('exit', 'quit'):
+                    return
+                if cmd.startswith('rungs '):
+                    status = self.relaunch(cmd[len('rungs '):])
+                else:
+                    status = self.run_cmd(cmd)
 
-            notice = f'{choice!r} exited with status {status}' if status else None
+                notice = (f'{choice!r} exited with status {status}'
+                          if status else None)
 
-            idx = keys.index(choice)
-            todo = keys[min(idx + 1, len(keys) - 1)]
+                idx = keys.index(choice)
+                todo = keys[min(idx + 1, len(keys) - 1)]
+        finally:
+            self.restore_env(saved)
 
     def find_menu(self, wanted, quiet=False):
         """ Find the menu given the name spec several different ways.
