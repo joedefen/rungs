@@ -78,6 +78,16 @@ Once a menu is up:
 > **Note:** if a menu does not fit your terminal, resize the terminal until it
 > does — `rungs` re-flows automatically.
 
+### Ctrl-C behaves politely
+
+<kbd>Ctrl</kbd>+<kbd>C</kbd> will not knock `rungs` over and wreck the display:
+
+* **At the menu**, it is ignored — a message reminds you to use the **exit key**
+  (`x`) to leave on purpose.
+* **While a command runs**, it interrupts *that command only*; `rungs` returns to
+  the menu with the step pre-selected so you can read the result (a command
+  stopped by Ctrl-C is reported as status `130`) and retry or pick another step.
+
 ## Configuration: `~/.config/rungs/rungs.ini`
 
 The first time you run `rungs` it creates a config for you. A menu is just an
@@ -110,8 +120,21 @@ Notes:
      command-b         # sent to bash literally
   ```
 
-* Keys must be a **single character** and **unique** within a menu. If you use a
-  longer key, only its first character is used.
+* Keys must be **unique** within a menu. A **one-character** key is used
+  literally, so make it a mnemonic when you can (`a: add`, `d: delete`).
+* A **longer** key is a placeholder that only needs to be unique in the file;
+  `rungs` assigns it the next free display character (`a`, `b`, `c`, ...) in
+  file order, reserving `x` for exit. This lets you insert a step without
+  re-lettering its neighbours:
+
+  ```ini
+  [maint]
+  a: add                          # literal mnemonic
+  00: git fetch --all             # auto key -> b
+  037: prune merged branches      # auto key -> c
+  x: exit
+  ```
+
 * `exit` (or `quit`) closes the menu.
 
 ### Environment variables (`+ENV`)
@@ -133,9 +156,10 @@ Notes:
   your shell is unaffected, and sub-menus launched from the section inherit it.
 * Values are de-quoted and `$VAR` references are expanded when the section
   starts, so `PATH=$PATH:/opt/bin` works.
-* Keys are reduced to their first character, so the key is literally `+` (from
-  `+ENV`). **Only one `+ENV` block per section** is allowed — list every
-  variable on its own indented line; two `+ENV` entries make the file invalid.
+* The directive's key is literally `+ENV` — a reserved, `+`-prefixed name that
+  is never a menu entry. **Only one `+ENV` block per section** is allowed — list
+  every variable on its own indented line; two `+ENV` entries make the file
+  invalid.
 * Removing variables is not supported.
 * Write `+ENV` first in the section by convention; it reads more clearly,
   although its position does not change what it does.

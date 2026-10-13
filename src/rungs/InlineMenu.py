@@ -142,9 +142,9 @@ class Menu:
             print(action, end='', flush=True)
 
     def _get_char(self):
-        """ Get one char from stdin """
+        """ Get one char from stdin, polling so terminal resizes redraw. """
         def init_timeout_handling():
-            # `SIGWINCH` is send on terminal resizes
+            # `SIGWINCH` is sent on terminal resizes
             def handle_timeout(*ignore):
                 raise Menu.InputTimeout
             signal.signal(signal.SIGALRM, handle_timeout)
@@ -155,19 +155,17 @@ class Menu:
             signal.signal(signal.SIGALRM, signal.SIG_IGN)
 
         rv = None
-        init_timeout_handling()
         while True:
             try:
                 init_timeout_handling()
                 rv = sys.stdin.read(1)
-                reset_timeout_handling()
             except Menu.InputTimeout:
+                rv = None
+            finally:
+                # Always disarm the alarm -- even when a Ctrl-C
+                # (KeyboardInterrupt) unwinds us out of the blocking read.
                 reset_timeout_handling()
-            except Exception as caught:
-                reset_timeout_handling()
-                raise caught
 
-            reset_timeout_handling()
             cols, rows = shutil.get_terminal_size()
             if self.cols != cols or self.rows != rows:
                 self.cols, self.rows = cols, rows
@@ -218,7 +216,13 @@ class Menu:
 
     def prompt(self):
         """ The external entry point which prompts the user
-        to select and choose a menu entry  """
+        to select and choose a menu entry.
+
+        Ctrl-C is deliberately ignored here -- if it were allowed to raise
+        all the way out, rungs would die mid-draw and leave the terminal
+        display in a mess.  The deliberate way to leave the menu is the
+        exit key (``x``).
+        """
         while True:
             try:
                 self._prompt_mode(enable=True)
@@ -249,5 +253,9 @@ class Menu:
                     self._move(idx - self.selected)
                 else:
                     self._bottom_line(f'invalid({repr(ans)}); pick again')
+            except KeyboardInterrupt:
+                # A stray interrupt must not tear the menu down; nudge the
+                # user toward the exit key instead and keep prompting.
+                self._bottom_line('Ctrl-C ignored; press x to exit')
             finally:
                 self._prompt_mode(enable=False)

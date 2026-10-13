@@ -9,10 +9,12 @@ where the exact set of steps depends on what you observe along the way.
 """
 
 import argparse
+import contextlib
 import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import traceback
@@ -32,12 +34,42 @@ except ImportError:  # plain-script mode: fall back to the installed package
         __version__ = 'unknown'
 
 
+@contextlib.contextmanager
+def _sigint_targets_child():
+    """ Aim Ctrl-C at the running command instead of at rungs.
+
+        A terminal Ctrl-C (SIGINT) is delivered to *every* process in the
+        foreground process group, including rungs -- so, unguarded, it tears
+        down both the command and this program and leaves the screen
+        half-drawn.  We install a do-nothing SIGINT handler for the duration
+        of the command so rungs survives the interrupt.
+
+        The command still stops: a Python signal *handler* is not carried
+        across ``exec`` (the kernel resets it to the default), so the child
+        shell/command receives SIGINT normally.  Note that ``SIG_IGN`` would
+        *not* do -- an ignored disposition *is* inherited past ``exec``,
+        which would make the command ignore Ctrl-C too.
+    """
+    previous = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, lambda _signum, _frame: None)
+    try:
+        yield
+    finally:
+        signal.signal(
+            signal.SIGINT,
+            previous if previous is not None else signal.SIG_DFL)
+
+
 class Rungs:
     """Fuzzy script tool workhorse class."""
 
     edit_menu = 'edit-rungs-config'
-    env_key = '+'                 # '+ENV' option key (optionxform truncates it)
+    env_key = '+ENV'               # the +ENV directive key, kept verbatim
+    env_prefix = '+'               # reserved prefix: directives, not entries
     global_section = '__GLOBAL__'  # env-only section shared by every menu
+    # Display keys handed to entries whose own key is longer than one char
+    # (an "auto" key).  'x' is omitted because it is the exit convention.
+    auto_pool = 'abcdefghijklmnopqrstuvwyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
     def __init__(self):
         self.opts = None
@@ -73,7 +105,9 @@ class Rungs:
                 f.write('   command-b\n')
                 f.write('x: exit\n')
         self.config = ConfigParser(interpolation=None)
-        self.config.optionxform = lambda x: str(x)[:1]  # keys case sensitive
+        # Keep keys verbatim (case sensitive): a multi-character key is an
+        # "auto" key and must survive parsing intact (see build_prompts).
+        self.config.optionxform = lambda x: str(x)
 
         self.read_file()
         for section, options in self.config.items():
@@ -121,7 +155,7 @@ class Rungs:
             menus, or ``None`` if the file cannot be read / has no menus.
         """
         config = ConfigParser(interpolation=None)
-        config.optionxform = lambda x: str(x)[:1]  # keys case sensitive
+        config.optionxform = lambda x: str(x)  # keep keys verbatim/case sensitive
         try:
             with open(path, encoding='utf-8') as handle:
                 config.read_file(handle, source=path)
@@ -178,7 +212,7 @@ class Rungs:
             name, sep, value = line.partition('=')
             name = name.strip()
             if not sep or not name:
-                print(f'WARNING: ignoring malformed {Rungs.env_key}ENV '
+                print(f'WARNING: ignoring malformed {Rungs.env_key} '
                       f'entry in {section!r}: {raw.strip()!r}')
                 continue
             value = value.strip()
@@ -190,14 +224,20 @@ class Rungs:
     def extract_env(self, options, section):
         """ Remove and parse the ``+ENV`` block from a mutable options mapping.
 
-            Returns the section's ``(name, value)`` assignments.  In the global
-            section every option must be ``+ENV``; any other option is reported
-            and dropped.
+            Returns the section's ``(name, value)`` assignments.  Keys with the
+            reserved ``+`` prefix are directives, never menu entries; a stray
+            one is reported and dropped.  In the global section every option
+            must be ``+ENV``.
         """
         block = options.pop(Rungs.env_key, None)
+        for stray in [key for key in options
+                      if key.startswith(Rungs.env_prefix)]:
+            print(f'WARNING: ignoring reserved directive {stray!r} '
+                  f'in {section!r}')
+            options.pop(stray, None)
         if section == Rungs.global_section:
             for stray in list(options):
-                print(f'WARNING: {section} permits only {Rungs.env_key}ENV; '
+                print(f'WARNING: {section} permits only {Rungs.env_key}; '
                       f'ignoring {stray!r}')
                 options.pop(stray, None)
         if block is None:
@@ -225,12 +265,23 @@ class Rungs:
             else:
                 os.environ[name] = old
 
+    @staticmethod
+    def shell_status(returncode):
+        """ Present a subprocess return code the way a shell would: a
+            command killed by signal *N* becomes ``128 + N`` (so a Ctrl-C
+            interruption reads as 130 rather than -2).
+        """
+        return 128 - returncode if returncode < 0 else returncode
+
     def run_cmd(self, cmd, precmd=None, dry_run=None):
         """ Run `cmd` (optionally preceded by `precmd`) through the shell.
 
             Returns the exit status of the last command run -- always 0 in
             dry-run mode -- so callers can surface a failing step instead of
-            silently swallowing it (as ``os.system`` did).
+            silently swallowing it (as ``os.system`` did).  A Ctrl-C while
+            the command runs interrupts *only* that command (see
+            :func:`_sigint_targets_child`); rungs itself keeps going and
+            reports the command's status.
         """
         dry_run = self.opts.dry_run if dry_run is None else dry_run
         script = '\n'.join(part for part in (precmd, cmd) if part)
@@ -238,7 +289,9 @@ class Rungs:
             print(f'WOULD RUN: {script}', flush=True)
             return 0
         print(f'==> {script}', flush=True)
-        return subprocess.run(script, shell=True, check=False).returncode
+        with _sigint_targets_child():
+            proc = subprocess.run(script, shell=True, check=False)
+        return Rungs.shell_status(proc.returncode)
 
     def relaunch(self, menu_spec):
         """ Launch a sub-menu in a fresh `rungs` process.
@@ -265,29 +318,54 @@ class Rungs:
             argv += shlex.split(menu_spec)
         except ValueError:
             argv.append(menu_spec)
-        return subprocess.run(argv, env=env, check=False).returncode
+        with _sigint_targets_child():
+            proc = subprocess.run(argv, env=env, check=False)
+        return Rungs.shell_status(proc.returncode)
 
     def build_prompts(self, options):
-        """ From the "options" in the section's options, create
-            the prompts per what InlineMenu requires. """
+        """ Build the prompts InlineMenu needs from a section's options.
+
+            A one-character key is a *literal* display key -- make it a
+            mnemonic when you can (``a`` for *add*, ``d`` for *delete*).  A
+            longer key is an *auto* key: it only has to be unique in the .ini
+            file, and rungs hands the entry the next free display character
+            from :data:`auto_pool` (which reserves ``x`` for exit) in file
+            order.  Either way the file order sets the menu order, so you can
+            insert an entry without re-lettering its neighbours.
+        """
         keys = []
         prompts = {}
         cmds = {}
+        taken = {key for key in options
+                 if len(key) == 1 and not key.startswith(Rungs.env_prefix)}
+        pool = iter(Rungs.auto_pool)
         for key, value in options.items():
-            keys.append(key)
-            lines = value.splitlines()
-            prompts[key] = lines.pop(0)
-            if not lines:
-                cmds[key] = prompts[key]
+            if key.startswith(Rungs.env_prefix):
+                continue  # reserved directive, not a menu entry
+            if len(key) == 1:
+                display = key
             else:
-                cmds[key] = '\n'.join(lines)
+                display = next((char for char in pool if char not in taken),
+                               None)
+                if display is None:
+                    print(f'WARNING: no free display key for {key!r}; '
+                          f'skipping it')
+                    continue
+                taken.add(display)
+            keys.append(display)
+            lines = value.splitlines() if value else ['']
+            prompts[display] = lines.pop(0)
+            if not lines:
+                cmds[display] = prompts[display]
+            else:
+                cmds[display] = '\n'.join(lines)
 
         return keys, prompts, cmds
 
     def make_section_menu(self, menus=None):
         """ In the case there are no specified menus, make a menu of them all """
         menus = self.menus if menus is None else menus
-        keys = 'abcdefghijklmnopqrstuvwyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        keys = Rungs.auto_pool
         options = {}
         for section in menus:
             if self.ordinary(section):

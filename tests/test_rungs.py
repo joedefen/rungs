@@ -5,6 +5,7 @@ Run with:  python3 -m pytest
 
 import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ from pathlib import Path
 import pytest
 
 import rungs
-from rungs.main import Rungs
+from rungs.main import Rungs, _sigint_targets_child
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 INVALID_INI = "this is not a valid ini file (no section header)\n"
@@ -227,6 +228,46 @@ def test_run_cmd_runs_via_shell_and_reports_status(tool, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# Ctrl-C / signal handling
+# --------------------------------------------------------------------------- #
+def test_shell_status_maps_signals_like_a_shell(tool):
+    assert tool.shell_status(0) == 0
+    assert tool.shell_status(7) == 7
+    assert tool.shell_status(-signal.SIGINT) == 130   # Ctrl-C -> 128 + 2
+
+
+def test_sigint_targets_child_ignores_then_restores():
+    before = signal.getsignal(signal.SIGINT)
+    with _sigint_targets_child():
+        during = signal.getsignal(signal.SIGINT)
+        assert callable(during)
+        assert during is not before          # a no-op handler is installed
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_run_cmd_lets_the_child_own_ctrl_c(tool, monkeypatch):
+    seen = {}
+
+    class Completed:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        # While the command runs, rungs must NOT be using the default
+        # (KeyboardInterrupt-raising) SIGINT handler ...
+        seen["handler"] = signal.getsignal(signal.SIGINT)
+        return Completed()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    before = signal.getsignal(signal.SIGINT)
+
+    tool.run_cmd("true")
+
+    assert callable(seen["handler"])
+    assert seen["handler"] is not before     # ... so Ctrl-C spares rungs
+    assert signal.getsignal(signal.SIGINT) is before   # and is restored
+
+
+# --------------------------------------------------------------------------- #
 # packaging / version
 # --------------------------------------------------------------------------- #
 def test_version_is_a_string():
@@ -271,13 +312,13 @@ def test_parse_env_block_pairs_skips_blanks_and_comments():
 
 
 def test_extract_env_pops_directive_only(tool):
-    options = {"a": "echo hi", "+": "FOO=bar"}
+    options = {"a": "echo hi", "+ENV": "FOO=bar"}
     assert tool.extract_env(options, "m") == [("FOO", "bar")]
-    assert "+" not in options and "a" in options
+    assert "+ENV" not in options and "a" in options
 
 
 def test_global_section_rejects_non_env_keys(tool, capsys):
-    options = {"+": "G=1", "a": "echo hi"}
+    options = {"+ENV": "G=1", "a": "echo hi"}
     assert tool.extract_env(options, Rungs.global_section) == [("G", "1")]
     assert options == {}
     assert "WARNING" in capsys.readouterr().out
@@ -288,7 +329,7 @@ def test_do_menu_applies_section_env_then_restores(tool, monkeypatch):
     monkeypatch.setenv("RV_KEEP", "orig")
 
     tool.do_menu("m", {"x": "exit",
-                       "+": "RV_SCOPE=scoped\nRV_KEEP=changed"})
+                       "+ENV": "RV_SCOPE=scoped\nRV_KEEP=changed"})
 
     assert _FakeMenu.seen_env["RV_SCOPE"] == "scoped"   # visible while running
     assert _FakeMenu.seen_env["RV_KEEP"] == "changed"
@@ -300,7 +341,7 @@ def test_section_env_overrides_global(tool, monkeypatch):
     monkeypatch.setattr("rungs.main.Menu", _FakeMenu)
     Rungs.apply_env(Rungs.parse_env_block("RV_SHARED=global", "g"))
     try:
-        tool.do_menu("m", {"x": "exit", "+": "RV_SHARED=section"})
+        tool.do_menu("m", {"x": "exit", "+ENV": "RV_SHARED=section"})
         assert _FakeMenu.seen_env["RV_SHARED"] == "section"
         assert os.environ["RV_SHARED"] == "global"   # global restored after
     finally:
@@ -342,3 +383,72 @@ def test_load_menu_file_applies_its_global_env(tool, tmp_path):
         assert os.environ["RV_FILE"] == "1"
     finally:
         os.environ.pop("RV_FILE", None)
+
+
+def test_reserved_plus_prefix_is_reported(tool, capsys):
+    options = {"+FOO": "bar", "a": "run"}
+    assert tool.extract_env(options, "m") == []
+    assert "+FOO" not in options and "a" in options
+    assert "WARNING" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# literal vs. auto keys
+# --------------------------------------------------------------------------- #
+def test_auto_keys_follow_file_order(tool):
+    options = {"01": "one", "02": "two", "025": "between", "03": "three"}
+    keys, prompts, cmds = tool.build_prompts(options)
+    assert keys == ["a", "b", "c", "d"]
+    assert [prompts[k] for k in keys] == ["one", "two", "between", "three"]
+    assert cmds["c"] == "between"
+
+
+def test_literal_keys_are_used_verbatim(tool):
+    options = {"a": "add", "d": "delete", "x": "exit"}
+    keys, prompts, cmds = tool.build_prompts(options)
+    assert keys == ["a", "d", "x"]
+    assert prompts["a"] == cmds["a"] == "add"
+
+
+def test_auto_keys_skip_literals_and_x(tool):
+    options = {"a": "add", "01": "auto-one", "x": "exit", "02": "auto-two"}
+    keys, prompts, cmds = tool.build_prompts(options)
+    # 'a' and 'x' are used literally, so the autos take 'b' and 'c'
+    assert keys == ["a", "b", "x", "c"]
+
+
+def test_auto_pool_reserves_x(tool):
+    options = {f"{i:02d}": f"cmd-{i}" for i in range(24)}
+    keys, prompts, cmds = tool.build_prompts(options)
+    assert "x" not in keys
+    assert keys == list("abcdefghijklmnopqrstuvwy")
+
+
+def test_auto_pool_exhaustion_warns(tool, capsys, monkeypatch):
+    monkeypatch.setattr(Rungs, "auto_pool", "ab")
+    options = {"01": "one", "02": "two", "03": "three"}
+    keys, prompts, cmds = tool.build_prompts(options)
+    assert keys == ["a", "b"]
+    assert "03" not in cmds
+    assert "WARNING" in capsys.readouterr().out
+
+
+def test_build_prompts_ignores_reserved_directives(tool):
+    options = {"+ENV": "FOO=bar", "a": "run"}
+    keys, prompts, cmds = tool.build_prompts(options)
+    assert keys == ["a"]
+
+
+def test_config_parses_multichar_auto_keys(home):
+    cfg_dir = home / ".config" / "rungs"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "rungs.ini").write_text(
+        "[m]\n01: one\n02: two\n025: between\nx: exit\n",
+        encoding="utf-8",
+    )
+    tool = Rungs()
+    # Keys survive parsing intact -- previously [:1] truncated these to '0'
+    # and raised DuplicateOptionError.
+    assert list(tool.menus["m"]) == ["01", "02", "025", "x"]
+    keys, prompts, cmds = tool.build_prompts(tool.menus["m"])
+    assert keys == ["a", "b", "c", "x"]
