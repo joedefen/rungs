@@ -65,8 +65,12 @@ class Rungs:
 
     edit_menu = 'edit-rungs-config'
     env_key = '+ENV'               # the +ENV directive key, kept verbatim
+    pre_key = '+PRE'               # the +PRE preamble directive key
     env_prefix = '+'               # reserved prefix: directives, not entries
-    global_section = '__GLOBAL__'  # env-only section shared by every menu
+    # Env var used to hand an enclosing menu's preamble to a sub-menu process.
+    pre_env_var = 'RUNGS_PRE'
+    # Section (shared by every menu) that may carry +ENV and/or +PRE.
+    global_section = '__GLOBAL__'
     # Display keys handed to entries whose own key is longer than one char
     # (an "auto" key).  'x' is omitted because it is the exit convention.
     auto_pool = 'abcdefghijklmnopqrstuvwyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -82,6 +86,8 @@ class Rungs:
         self.menus = {}
         self.file_menus = {}
         self.global_env = []
+        self.global_pre = ''          # [__GLOBAL__] preamble (a +PRE block)
+        self.inherited_pre = os.environ.get(Rungs.pre_env_var) or ''
         self.menu_file = None
         self.corrupt_config = False
         self.get_config()
@@ -114,7 +120,10 @@ class Rungs:
             if section == 'DEFAULT':
                 continue
             if section == self.global_section:
-                self.global_env = self.extract_env(dict(options), section)
+                global_options = dict(options)
+                self.global_pre = Rungs.join_preamble(
+                    self.global_pre, self.extract_pre(global_options))
+                self.global_env = self.extract_env(global_options, section)
                 continue
             self.menus[section] = dict(options)
         self.apply_env(self.global_env)
@@ -170,6 +179,8 @@ class Rungs:
                 continue
             options = dict(options)
             if section == self.global_section:
+                self.global_pre = Rungs.join_preamble(
+                    self.global_pre, self.extract_pre(options))
                 global_env = self.extract_env(options, section)
                 continue
             file_menus[section] = options
@@ -245,6 +256,26 @@ class Rungs:
         return Rungs.parse_env_block(block, section)
 
     @staticmethod
+    def extract_pre(options):
+        """ Remove and return the ``+PRE`` preamble from a mutable options map.
+
+            The preamble is raw shell text that gets prepended to *every*
+            command in a section.  Unlike ``+ENV`` it is deliberately *not*
+            variable-expanded -- which is exactly why a distinct directive is
+            needed: :meth:`apply_env` runs ``expandvars``, so a snippet that
+            refers to ``$fail`` / ``$OK_MSG`` would be gutted before it ran.
+
+            Returns the text, or ``None`` when there is no non-blank ``+PRE``.
+        """
+        block = options.pop(Rungs.pre_key, None)
+        return block if block and block.strip() else None
+
+    @staticmethod
+    def join_preamble(*parts):
+        """ Join the non-empty preamble snippets ``parts`` with newlines. """
+        return '\n'.join(part for part in parts if part)
+
+    @staticmethod
     def apply_env(pairs):
         """ Set each ``(name, value)`` in ``os.environ`` (in order), expanding
             ``$VAR`` references -- ``subprocess`` never expands env values for
@@ -265,6 +296,47 @@ class Rungs:
             else:
                 os.environ[name] = old
 
+    def section_preamble(self, section_pre):
+        """ The full ``+PRE`` text to prepend to this section's commands.
+
+            Order matters: the global preamble comes first (a base), then any
+            preamble inherited from an enclosing menu (via ``RUNGS_PRE``), and
+            finally the section's own ``+PRE`` -- so a section may redefine a
+            helper it inherited.
+        """
+        return Rungs.join_preamble(self.global_pre, self.inherited_pre,
+                                   section_pre)
+
+    def child_preamble(self, section_pre):
+        """ The preamble exported to sub-menus (``RUNGS_PRE``).
+
+            The global preamble is intentionally *left out*: every ``rungs``
+            process adds its own global, so including it here would stack a
+            fresh copy at each nesting level.  What we pass down is only the
+            "outer sections" chain, which a child cannot otherwise rebuild.
+        """
+        return Rungs.join_preamble(self.inherited_pre, section_pre)
+
+    def push_preamble(self, preamble):
+        """ Export ``preamble`` (if any) so sub-menus inherit it.
+
+            Returns the previous ``RUNGS_PRE`` value for :meth:`pop_preamble`.
+        """
+        saved = os.environ.get(Rungs.pre_env_var)
+        if preamble:
+            os.environ[Rungs.pre_env_var] = preamble
+        else:
+            os.environ.pop(Rungs.pre_env_var, None)
+        return saved
+
+    @staticmethod
+    def pop_preamble(saved):
+        """ Undo a matching :meth:`push_preamble`. """
+        if saved is None:
+            os.environ.pop(Rungs.pre_env_var, None)
+        else:
+            os.environ[Rungs.pre_env_var] = saved
+
     @staticmethod
     def shell_status(returncode):
         """ Present a subprocess return code the way a shell would: a
@@ -273,8 +345,13 @@ class Rungs:
         """
         return 128 - returncode if returncode < 0 else returncode
 
-    def run_cmd(self, cmd, precmd=None, dry_run=None):
-        """ Run `cmd` (optionally preceded by `precmd`) through the shell.
+    def run_cmd(self, cmd, precmd=None, dry_run=None, preamble=None):
+        """ Run `cmd`, optionally preceded by `preamble` and `precmd`.
+
+            ``preamble`` is the shared shell text prepended to every command
+            in a section (the ``+PRE`` directive).  It is executed ahead of
+            the command but deliberately kept out of the ``==>`` echo -- else
+            the same snippet would be reprinted before every single step.
 
             Returns the exit status of the last command run -- always 0 in
             dry-run mode -- so callers can surface a failing step instead of
@@ -284,11 +361,12 @@ class Rungs:
             reports the command's status.
         """
         dry_run = self.opts.dry_run if dry_run is None else dry_run
-        script = '\n'.join(part for part in (precmd, cmd) if part)
+        script = Rungs.join_preamble(preamble, precmd, cmd)
+        echo = Rungs.join_preamble(precmd, cmd)
         if dry_run:
-            print(f'WOULD RUN: {script}', flush=True)
+            print(f'WOULD RUN: {echo}', flush=True)
             return 0
-        print(f'==> {script}', flush=True)
+        print(f'==> {echo}', flush=True)
         with _sigint_targets_child():
             proc = subprocess.run(script, shell=True, check=False)
         return Rungs.shell_status(proc.returncode)
@@ -379,18 +457,27 @@ class Rungs:
     def do_menu(self, menu_name, options=None):
         """ Show a menu and run the picked command until the user exits.
 
-            Any ``+ENV`` block in the section is applied for the whole section
-            and removed again on the way out (even on error or interrupt).
+            A section's ``+ENV`` / ``+PRE`` blocks are applied for the whole
+            section and removed again on the way out (even on error or
+            interrupt).  The preamble is echoed once, up front; the individual
+            commands then echo on their own (see :meth:`run_cmd`).
         """
         if options is None:
             options = self.menus.get(menu_name)
         options = dict(options) if options else {}
+        # +PRE must be popped before extract_env, which reports any leftover
+        # reserved directive as a stray.
+        section_pre = self.extract_pre(options)
         env_pairs = self.extract_env(options, menu_name)
         keys, prompts, cmds = self.build_prompts(options)
         if not keys:
             return
 
+        preamble = self.section_preamble(section_pre)
+        if preamble:
+            print(f'==> [preamble]\n{preamble}', flush=True)
         saved = self.apply_env(env_pairs)
+        saved_pre = self.push_preamble(self.child_preamble(section_pre))
         try:
             todo = keys[0]
             notice = None
@@ -403,7 +490,7 @@ class Rungs:
                 if cmd.startswith('rungs '):
                     status = self.relaunch(cmd[len('rungs '):])
                 else:
-                    status = self.run_cmd(cmd)
+                    status = self.run_cmd(cmd, preamble=preamble)
 
                 notice = (f'{choice!r} exited with status {status}'
                           if status else None)
@@ -411,6 +498,7 @@ class Rungs:
                 idx = keys.index(choice)
                 todo = keys[min(idx + 1, len(keys) - 1)]
         finally:
+            self.pop_preamble(saved_pre)
             self.restore_env(saved)
 
     def find_menu(self, wanted, quiet=False):

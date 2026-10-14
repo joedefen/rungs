@@ -20,7 +20,8 @@ of cryptic one-liners), you get a menu where you highlight the next step, hit
 <kbd>Enter</kbd>, and watch it run. Which step you run next is your call.
 
 Typical configs are **system updates** and **Docker housekeeping** — the chores
-with "too many commands to remember".
+with "too many commands to remember". `rungs` also makes a great **executable
+runbook** — see [Executable runbooks (stepped specs)](#executable-runbooks-stepped-specs).
 
 ![eos-update-menu](https://github.com/joedefen/rungs/blob/main/images/eos-update-menu.png?raw=true)
 
@@ -35,6 +36,72 @@ with "too many commands to remember".
 | **Nothing to remember** | Commands live in a readable config; the menu shows descriptions for the messy ones. |
 | **Recoverable** | Every valid config is auto-backed-up to `rungs.ini.bak`, so a bad edit is easy to undo. |
 | **Composable** | Menus can launch other menus, so you can build multi-level procedures. |
+
+## Executable runbooks (stepped specs)
+
+`rungs` shines when a procedure is too fuzzy for a script but too important to
+leave in a wiki page: a "kick the tires" check of a freshly installed package, a
+host-specific teardown, or a manual integration test. Call it
+**the layer between `make test` and a wiki page.**
+
+Unit tests prove your logic against mocks; they never see the real host. A
+**stepped spec** proves the product actually *wired itself into the box* —
+`$PATH`, the pipx launcher, the systemd unit, `/dev/zram0`, `sudo`. A missing
+`/usr/local/bin/...` (reported as *command not found*), a `--unsetup` that
+deletes itself, or a stray `/tmp` file are invisible to mocks; a stepped spec
+catches them by looking at the machine.
+
+Why `rungs` is a good vehicle for it:
+
+* **Human-in-the-loop is the feature.** Unloading swap, removing a service, and
+  reaching for `sudo` are exactly where automation is unsafe. Just pick another
+  entry to **skip** a step, or run it again to **repeat** one — the right model
+  for a fuzzy procedure.
+* **Noisy evidence, plus a machine verdict.** You read the `EXPECT:` lines while
+  CI greps the *same* run for a marker. One artifact serves both the human and
+  the machine — *a runbook you can also run in CI*.
+* **Zero deployment.** An ad-hoc `.ini` file, `+ENV` for shared tokens, and
+  auto-keys mean the spec lives **versioned in your repo**, not in
+  `~/.config`.
+
+Each check prints its raw evidence, states what to `EXPECT:`, then a one-line
+verdict pulled from `$OK_MSG` / `$FAIL_MSG`:
+
+```ini
+[__GLOBAL__]
++ENV: OK_MSG=✓✓✓✓✓✓✓✓✓✓ OK
+      FAIL_MSG=✘✘✘✘✘✘✘✘✘✘ FAIL
+
+[smoke]
+01: :: *Install the working tree          # state-changing; '*' butts the text
+   pipx install --force .
+02: ::  - CHK: launcher is on PATH. EXPECT: a resolved path
+   echo '$ command -v mytool'
+   command -v mytool
+   command -v mytool >/dev/null 2>&1 \
+     && { echo; echo "$OK_MSG"; } \
+     || { echo; echo "$FAIL_MSG"; exit 1; }
+x: exit
+```
+
+Run it (needs a TTY, and a human for the risky steps):
+
+```sh
+rungs samples/IntegrationSpec.ini
+```
+
+Capture the run and let CI read the verdict:
+
+```sh
+rungs samples/IntegrationSpec.ini | tee run.log
+grep -q '✓✓✓' run.log && echo PASS || echo FAIL
+```
+
+The TTY-and-human requirement is a *feature*: it is exactly the layer
+automation should **not** cover. Use it *alongside* your mocked unit tests, not
+as a replacement for them. See
+[`samples/IntegrationSpec.ini`](samples/IntegrationSpec.ini) for a runnable
+example that "kicks the tires" of a `rungs` install.
 
 ## Requirements
 
@@ -165,7 +232,7 @@ Notes:
   although its position does not change what it does.
 
 To share variables across **all** sections, use the reserved, hidden
-`[__GLOBAL__]` section, which accepts only `+ENV`:
+`[__GLOBAL__]` section, which accepts only `+ENV` and `+PRE`:
 
 ```ini
 [__GLOBAL__]
@@ -177,6 +244,48 @@ To share variables across **all** sections, use the reserved, hidden
 is inherited by every section and sub-menu. A section's own `+ENV` overrides a
 global of the same name while that section runs, and the global is restored
 afterwards.
+
+### Shared preambles (`+PRE`)
+
+A section can prepend a chunk of shell text to **every** command it runs, using
+a `+PRE` entry. This is a *preamble*, not an exported shell function: each
+command runs in a fresh `/bin/sh`, so define whatever you need — variables,
+helper functions — as plain shell text, and it is re-stated before each command:
+
+```ini
+[test-suite]
++PRE: fail=0
+      OK_MSG='all good'
+      report() { echo "$1: $OK_MSG"; }
+      verdict() { if [ "$fail" -eq 0 ]; then echo PASS; else echo FAIL; fi; }
+a: run-tests && report tests
+   verdict
+x: exit
+```
+
+Notes:
+
+* The block applies to the **whole section** and is inherited by sub-menus
+  launched from it. A section's own `+PRE` comes *after* any global / inherited
+  preamble, so it can redefine a helper it inherited.
+* `+PRE` is **not** de-quoted or `$VAR`-expanded (unlike `+ENV`): the text is
+  handed to the shell verbatim. That is what lets a helper's `$fail` stay a
+  reference until the command actually runs — the reason a distinct directive is
+  needed rather than stuffing the snippet into `+ENV`.
+* The preamble is echoed **once** at the top of the section (`==> [preamble]`);
+  each step then echoes only its own command, so the shared snippet is not
+  reprinted before every run.
+* **Only one `+PRE` block per section** is allowed — like `+ENV`, list every
+  line indented beneath the directive.
+
+`+PRE` may also live in `[__GLOBAL__]`, so helpers used by *every* menu are
+defined in one place:
+
+```ini
+[__GLOBAL__]
++PRE: log() { printf '%s\n' "$*" >&2; }
++ENV: REGISTRY=registry.local
+```
 
 ## Command line
 
@@ -253,6 +362,8 @@ The [`samples/`](samples/) directory has ready-to-adapt menus:
   two-level Fedora release upgrade.
 * [`DockerMaintenance.ini`](samples/DockerMaintenance.ini) — reclaim Docker disk space
   (images, containers, volumes, build cache).
+* [`IntegrationSpec.ini`](samples/IntegrationSpec.ini) — a **stepped spec**: a
+  read-only "kick the tires" runbook with `EXPECT:` lines and ✓/✘ verdicts.
 
 These are **not** tested against the latest distro releases — review them before running.
 

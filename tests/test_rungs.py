@@ -452,3 +452,150 @@ def test_config_parses_multichar_auto_keys(home):
     assert list(tool.menus["m"]) == ["01", "02", "025", "x"]
     keys, prompts, cmds = tool.build_prompts(tool.menus["m"])
     assert keys == ["a", "b", "c", "x"]
+
+
+# --------------------------------------------------------------------------- #
+# preamble directives (+PRE)
+# --------------------------------------------------------------------------- #
+class _QueueMenu:
+    """A stand-in for InlineMenu.Menu that returns a scripted key queue."""
+
+    queue = []
+
+    def __init__(self, prompts, default=None, title="", notice=None):
+        self.prompts = prompts
+
+    def prompt(self):
+        return _QueueMenu.queue.pop(0)
+
+
+def test_extract_pre_pops_directive_only(tool):
+    options = {"a": "echo hi", "+PRE": "fail() { echo fail; }"}
+    assert tool.extract_pre(options) == "fail() { echo fail; }"
+    assert "+PRE" not in options and "a" in options
+
+
+def test_extract_pre_blank_is_none(tool):
+    assert tool.extract_pre({}) is None
+    assert tool.extract_pre({"+PRE": "   \n  "}) is None
+
+
+def test_pre_is_not_reported_as_stray(tool, capsys):
+    options = {"a": "run", "+PRE": "X=1"}
+    assert tool.extract_pre(options) == "X=1"
+    assert tool.extract_env(options, "m") == []
+    assert capsys.readouterr().out == ""
+
+
+def test_join_preamble_skips_empties():
+    assert Rungs.join_preamble(None, "a", "", "b") == "a\nb"
+    assert Rungs.join_preamble() == ""
+
+
+def test_section_preamble_orders_global_inherited_section(tool):
+    tool.global_pre = "GLOBAL=1"
+    tool.inherited_pre = "INHERITED=1"
+    assert (tool.section_preamble("SECTION=1")
+            == "GLOBAL=1\nINHERITED=1\nSECTION=1")
+
+
+def test_child_preamble_omits_global(tool):
+    tool.global_pre = "GLOBAL=1"
+    tool.inherited_pre = "INHERITED=1"
+    assert tool.child_preamble("SECTION=1") == "INHERITED=1\nSECTION=1"
+
+
+def test_run_cmd_prepends_preamble_but_echoes_command(tool, capsys, monkeypatch):
+    seen = {}
+
+    class Completed:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        seen["command"] = command
+        return Completed()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    tool.run_cmd("echo hi", preamble="PRE=1")
+
+    assert seen["command"] == "PRE=1\necho hi"
+    out = capsys.readouterr().out
+    assert "==> echo hi" in out
+    assert "PRE=1" not in out          # the preamble is not reprinted
+
+
+def test_do_menu_runs_with_section_preamble(tool, monkeypatch):
+    monkeypatch.setattr("rungs.main.Menu", _QueueMenu)
+    _QueueMenu.queue = ["a", "x"]
+    calls = []
+    monkeypatch.setattr(
+        tool, "run_cmd",
+        lambda cmd, **kw: calls.append((cmd, kw.get("preamble"))) or 0)
+
+    tool.do_menu("m", {"a": "echo hi", "x": "exit", "+PRE": "SECTION=1"})
+
+    assert calls == [("echo hi", "SECTION=1")]
+
+
+def test_do_menu_exports_preamble_to_submenus_then_restores(tool, monkeypatch):
+    monkeypatch.setattr("rungs.main.Menu", _QueueMenu)
+    _QueueMenu.queue = ["a", "x"]
+    tool.global_pre = "GLOBAL=1"
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["RUNGS_PRE"] = os.environ.get(Rungs.pre_env_var)
+        return 0
+
+    monkeypatch.setattr(tool, "run_cmd", fake_run)
+    tool.do_menu("m", {"a": "echo hi", "x": "exit", "+PRE": "SECTION=1"})
+
+    # Sub-menus inherit the section chain, but not the (re-added) global ...
+    assert seen["RUNGS_PRE"] == "SECTION=1"
+    assert Rungs.pre_env_var not in os.environ    # ... and it is restored
+
+
+def test_section_preamble_is_not_env_expanded(tool, monkeypatch):
+    monkeypatch.setenv("RV_EXPAND", "boom")
+    monkeypatch.setattr("rungs.main.Menu", _QueueMenu)
+    _QueueMenu.queue = ["a", "x"]
+    seen = {}
+    monkeypatch.setattr(tool, "run_cmd", lambda cmd, **kw: seen.update(kw) or 0)
+
+    tool.do_menu("m", {"a": "echo hi", "x": "exit", "+PRE": "echo $RV_EXPAND"})
+
+    assert seen["preamble"] == "echo $RV_EXPAND"   # +PRE is never expanded
+
+
+def test_global_section_accepts_and_applies_pre(home):
+    cfg_dir = home / ".config" / "rungs"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "rungs.ini").write_text(
+        "[__GLOBAL__]\n"
+        "+PRE: GLOBAL_HELPER=1\n"
+        "\n"
+        "[m]\n"
+        "x: exit\n",
+        encoding="utf-8",
+    )
+    tool = Rungs()
+    assert tool.global_pre == "GLOBAL_HELPER=1"
+    assert Rungs.global_section not in tool.menus
+
+
+def test_load_menu_file_applies_its_global_pre(tool, tmp_path):
+    menu_file = tmp_path / "proc.ini"
+    menu_file.write_text(
+        "[__GLOBAL__]\n+PRE: FILE_HELPER=1\n\n[adhoc]\nx: exit\n",
+        encoding="utf-8",
+    )
+    menus = tool.load_menu_file(str(menu_file))
+    assert set(menus) == {"adhoc"}
+    assert tool.global_pre == "FILE_HELPER=1"
+
+
+def test_inherited_preamble_is_read_from_environment(home, monkeypatch):
+    monkeypatch.setenv(Rungs.pre_env_var, "FROM_PARENT=1")
+    tool = Rungs()
+    assert tool.inherited_pre == "FROM_PARENT=1"
+    assert tool.section_preamble(None) == "FROM_PARENT=1"
